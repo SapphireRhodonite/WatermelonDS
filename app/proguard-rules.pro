@@ -36,6 +36,7 @@
 -keep class me.magnum.melonds.domain.model.DSiWareTitle { *; }
 -keep class me.magnum.melonds.domain.model.VideoRenderer { *; }
 -keep class me.magnum.melonds.domain.model.VideoFiltering { *; }
+-keep class me.magnum.melonds.domain.model.VulkanPipelineProfile { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RASimpleAchievement { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RASimpleLeaderboard { *; }
 -keep class me.magnum.melonds.domain.model.retroachievements.RASimpleRuntimeAchievement { *; }

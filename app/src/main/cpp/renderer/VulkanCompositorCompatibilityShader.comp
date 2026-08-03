@@ -1,6 +1,6 @@
 #version 450
 
-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
 layout(set = 0, binding = 0, rgba8) uniform writeonly image2D outImage;
 layout(set = 0, binding = 1, rgba8) uniform readonly image2D image3dInput;
@@ -40,20 +40,12 @@ layout(push_constant) uniform PushConsts
     uint liveSourceScreenSwap;
     uint class4VramStructuredPair;
     uint class4NoAboveVramStructuredPair;
-    uint class4PackedVramMode;
+    uint class4PreservePackedVramValid;
     uint class4PreservePackedVramScreenSwap;
     uint topStructuredHandoffNoCurrent3d;
     uint bottomStructuredHandoffNoCurrent3d;
     uint topStructuredHandoffSuppress3d;
     uint bottomStructuredHandoffSuppress3d;
-    uint regionMode;
-    uint regionTopScreen;
-    uint regionX;
-    uint regionY;
-    uint regionWidth;
-    uint regionHeight;
-    uint fastHighresOnlyTop;
-    uint fastHighresOnlyBottom;
 } pc;
 
 const uint kMetaFlagRegularCaptureUses3d = 1u << 21u;
@@ -61,10 +53,7 @@ const uint kMetaFlagVramCaptureUses3d = 1u << 22u;
 const uint kMetaFlagForceLive3dCompMode7 = 1u << 18u;
 const uint kMetaFlagStructuredAboveDominant = 1u << 19u;
 const uint kMetaFlagCompMode2StructuredPair = 1u << 20u;
-const int kStructuredVulkan2DProtectedBlackTargetsBottomFlag = 0x1;
 const uint kFilterLinear = 1u;
-const uint kPackedScreenWidth = 256u;
-const uint kPackedScreenHeight = 192u;
 
 struct Rgba6
 {
@@ -299,58 +288,6 @@ Rgba6 samplePreviousBottom3DColorAtScaledPixel(int scaledX, int scaledY)
     return color;
 }
 
-bool hasVisibleHighresColor(Rgba6 color)
-{
-    return (color.a & 0x1F) > 0
-        && ((color.r | color.g | color.b) != 0);
-}
-
-bool hasHighresCoverage(Rgba6 color)
-{
-    return (color.a & 0x1F) > 0;
-}
-
-bool hasPrevious3DSourceForScreen(bool topScreen)
-{
-    if (topScreen)
-        return pc.previousTopSourceValid != 0u;
-
-    return pc.previousBottomSourceValid != 0u;
-}
-
-Rgba6 samplePrevious3DColorForScreen(bool topScreen, int scaledX, int scaledY)
-{
-    if (topScreen)
-        return samplePreviousTop3DColorAtScaledPixel(scaledX, scaledY);
-
-    return samplePreviousBottom3DColorAtScaledPixel(scaledX, scaledY);
-}
-
-Rgba6 sampleFastHighresOnly(bool topScreen, int scaledX, int scaledY)
-{
-    bool ownsLive3D = topScreen ? (pc.liveSourceScreenSwap != 0u) : (pc.liveSourceScreenSwap == 0u);
-    Rgba6 live = sample3DColorAtScaledPixel(scaledX, scaledY);
-    Rgba6 empty;
-    empty.r = 0;
-    empty.g = 0;
-    empty.b = 0;
-    empty.a = 0;
-
-    if (!hasPrevious3DSourceForScreen(topScreen))
-        return ownsLive3D ? live : empty;
-
-    Rgba6 previous = samplePrevious3DColorForScreen(topScreen, scaledX, scaledY);
-    bool previousHasCoverage = hasHighresCoverage(previous);
-
-    if (!ownsLive3D)
-        return previousHasCoverage ? previous : empty;
-
-    if (!hasHighresCoverage(live) && previousHasCoverage)
-        return previous;
-
-    return live;
-}
-
 Rgba6 sampleCapture3DColorAtDsPixel(int dsX, int dsY)
 {
     Rgba6 zero;
@@ -371,12 +308,14 @@ Rgba6 sampleCapture3DColorAtDsPixel(int dsX, int dsY)
 
 uint readTopPacked(int y, int x)
 {
-    return topPacked[uint(y) * pc.packedStride + uint(x)];
+    uint offset = uint(y) * pc.packedStride + uint(x);
+    return topPacked[offset];
 }
 
 uint readBottomPacked(int y, int x)
 {
-    return bottomPacked[uint(y) * pc.packedStride + uint(x)];
+    uint offset = uint(y) * pc.packedStride + uint(x);
+    return bottomPacked[offset];
 }
 
 #define DEFINE_SAMPLE_FILTERED_PACKED_LAYER(FUNC_NAME, READ_PACKED_FN) \
@@ -455,12 +394,6 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
         bool structured2DSlot = hasStructured2D3DSlot(val3); \
         bool structured2DAbove = hasStructured2DAbovePlane(val3); \
         bool structured2DProtectedBlack = hasStructured2DProtectedBlack(val3); \
-        bool structured2DProtectedBlackTargetsBottom = (val3.r & kStructuredVulkan2DProtectedBlackTargetsBottomFlag) != 0; \
-        bool structured2DProtectedBlackForeign = structured2DProtectedBlack \
-            && (SCREEN_IS_TOP ? structured2DProtectedBlackTargetsBottom : !structured2DProtectedBlackTargetsBottom); \
-        bool structured2DProtectedBlackOwned = structured2DProtectedBlack && !structured2DProtectedBlackForeign; \
-        bool structuredControlHas2DPayload = \
-            (((val3.r & ~kStructuredVulkan2DProtectedBlackTargetsBottomFlag) | val3.g | val3.b) != 0); \
         bool structured2DNo3DCoverage = hasStructured2DNo3DCoverage(val3); \
         bool structured2DOnly = isStructured2DOnly(val3); \
         bool both3dPlaceholders = isPacked3dPlaceholder(val1) && isPacked3dPlaceholder(val2); \
@@ -554,25 +487,14 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                 : samplePreviousBottom3DColorAtScaledPixel(shiftedScaledX, scaledY); \
             pixel3DFromLive = false; \
         } \
-        bool plainLiveStructured3DBlack = compMode == 0 \
-            && structured2DSlot \
-            && !structured2DAbove \
-            && !regularCaptureUses3d \
-            && !vramCaptureUses3d \
-            && !forceLive3dCompMode7 \
-            && screenOwnsLive3D \
-            && pixel3DFromLive \
-            && (pixel3D.a & 0x1F) > 0 \
-            && ((pixel3D.r | pixel3D.g | pixel3D.b) == 0); \
         if (compModeSamples3D \
             && screenOwnsLive3D \
             && screenHasPrevious3D \
             && brightnessMode == 0 \
-            && !structured2DProtectedBlackOwned \
+            && !structured2DProtectedBlack \
             && !partialCaptureBackedComp4BorderLine \
             && !regularCaptureUses3d \
             && (structured2DSlot || regularCaptureUses3d || vramCaptureUses3d) \
-            && !plainLiveStructured3DBlack \
             && (pixel3D.a & 0x1F) > 0 \
             && ((pixel3D.r | pixel3D.g | pixel3D.b) == 0)) \
         { \
@@ -595,23 +517,6 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             && (((pixel3D.r | pixel3D.g | pixel3D.b) != 0) \
                 || pixel3DLiveBlackHasSupport \
                 || (!pixel3DFromLive && screenHasPrevious3D)); \
-        if (regularCaptureUses3d \
-            && pixel3DFromLive \
-            && screenHasPrevious3D \
-            && !pixel3DHasVisibleColor \
-            && !structured2DProtectedBlackOwned) \
-        { \
-            Rgba6 history3D = SCREEN_IS_TOP \
-                ? samplePreviousTop3DColorAtScaledPixel(shiftedScaledX, scaledY) \
-                : samplePreviousBottom3DColorAtScaledPixel(shiftedScaledX, scaledY); \
-            if ((history3D.a & 0x1F) > 0 && ((history3D.r | history3D.g | history3D.b) != 0)) \
-            { \
-                pixel3D = history3D; \
-                pixel3DFromLive = false; \
-                pixel3DLiveBlackHasSupport = false; \
-                pixel3DHasVisibleColor = true; \
-            } \
-        } \
         bool pixel3DHasUsefulColor = (pixel3D.a & 0x1F) > 0 \
             && (pixel3DHasVisibleColor \
                 || regularCaptureUses3d); \
@@ -664,37 +569,6 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
         bool captureHighresHasCoverage = (captureHighresFromLive.a & 0x1F) > 0; \
         bool captureHighresHasVisibleColor = captureHighresHasCoverage \
             && ((captureHighresFromLive.r | captureHighresFromLive.g | captureHighresFromLive.b) != 0); \
-        if (forceLive3dCompMode7 \
-            && compMode == 7 \
-            && structured2DSlot \
-            && screenHasPrevious3D \
-            && !screenOwnsLive3D \
-            && !pixel3DHasVisibleColor) \
-        { \
-            Rgba6 history3D = SCREEN_IS_TOP \
-                ? samplePreviousTop3DColorAtScaledPixel(shiftedScaledX, scaledY) \
-                : samplePreviousBottom3DColorAtScaledPixel(shiftedScaledX, scaledY); \
-            if ((history3D.a & 0x1F) > 0 && ((history3D.r | history3D.g | history3D.b) != 0)) \
-            { \
-                pixel3D = history3D; \
-                pixel3DFromLive = false; \
-                pixel3DLiveBlackHasSupport = false; \
-                pixel3DHasVisibleColor = true; \
-                pixel3DHasUsefulColor = true; \
-            } \
-        } \
-        if (forceLive3dCompMode7 \
-            && compMode == 7 \
-            && structured2DSlot \
-            && captureHighresHasVisibleColor \
-            && !pixel3DHasVisibleColor) \
-        { \
-            pixel3D = captureHighresFromLive; \
-            pixel3DFromLive = true; \
-            pixel3DLiveBlackHasSupport = false; \
-            pixel3DHasVisibleColor = true; \
-            pixel3DHasUsefulColor = true; \
-        } \
         bool suppressCaptureBackedComp4Border = captureBackedComp4 \
             && ((partialCaptureBackedComp4BorderLine && !capture3DHasVisibleColor) \
                 || (!screenWideCaptureBackedComp4 && !capture3DHasVisibleColor)); \
@@ -703,7 +577,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             && screenOwnsLive3D \
             && !regularCaptureUses3d \
             && !vramCaptureUses3d \
-            && !structured2DProtectedBlackOwned \
+            && !structured2DProtectedBlack \
             && !structured2DNo3DCoverage \
             && !suppressCaptureBackedComp4Border \
             && ((pixel3D.a & 0x1F) > 0) \
@@ -761,19 +635,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
         } \
         if (structured2DOnly) \
         { \
-            if (structured2DProtectedBlackForeign && screenHasPrevious3D) \
-            { \
-                Rgba6 history3D = SCREEN_IS_TOP \
-                    ? samplePreviousTop3DColorAtScaledPixel(shiftedScaledX, scaledY) \
-                    : samplePreviousBottom3DColorAtScaledPixel(shiftedScaledX, scaledY); \
-                val1 = ((history3D.a & 0x1F) > 0 && ((history3D.r | history3D.g | history3D.b) != 0)) \
-                    ? history3D \
-                    : pixel; \
-            } \
-            else \
-            { \
-                val1 = pixel; \
-            } \
+            val1 = pixel; \
         } \
         else if (structured2DSlot) \
         { \
@@ -785,7 +647,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             if (compMode == 7 \
                 && structuredFullRegularCapture3d \
                 && !structured2DAbove \
-                && !structured2DProtectedBlackOwned \
+                && !structured2DProtectedBlack \
                 && (screenOwnsLive3D || forceLive3dCompMode7) \
                 && !screenHasPrevious3D \
                 && screenMatchesCapture3DSource \
@@ -801,7 +663,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             if (compMode == 7 \
                 && structuredFullRegularCapture3d \
                 && !structured2DAbove \
-                && !structured2DProtectedBlackOwned \
+                && !structured2DProtectedBlack \
                 && screenOwnsLive3D \
                 && screenHasPrevious3D \
                 && screenMatchesCapture3DSource \
@@ -822,14 +684,14 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             } \
             bool structuredFullRegularVisible3D = compMode == 7 \
                 && structuredFullRegularCapture3d \
-                && !structured2DProtectedBlackOwned \
+                && !structured2DProtectedBlack \
                 && pixel3DHasVisibleColor; \
             bool regularCaptureVisible2DAbove = regularCaptureUses3d \
                 && structured2DAbove \
                 && !structuredAboveDominant \
                 && isStructured2DVisible(above2D); \
             bool structuredPlane1Usable2D = isStructured2DVisible(above2D) \
-                || structured2DProtectedBlackOwned; \
+                || structured2DProtectedBlack; \
             bool regularCaptureDominant2DPlane = regularCaptureUses3d \
                 && structuredAboveDominant \
                 && structuredPlane1Usable2D; \
@@ -844,26 +706,8 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                 && structuredAboveDominant \
                 && (screenOwnsLive3D || screenHasPrevious3D) \
                 && !plainStructuredOppositeNoCurrentHandoff \
-                && !structured2DProtectedBlackOwned \
+                && !structured2DProtectedBlack \
                 && pixel3DHasVisibleColor; \
-            bool class4BottomStructuredAboveCurrentOwnedHistory = !SCREEN_IS_TOP \
-                && pc.class4PackedVramMode == 5u \
-                && compMode == 7 \
-                && forceLive3dCompMode7 \
-                && structured2DSlot \
-                && structured2DAbove \
-                && !structured2DOnly \
-                && !structured2DProtectedBlackOwned \
-                && !screenOwnsLive3D \
-                && screenHasPrevious3D; \
-            bool class4BottomStructuredCurrentOwnedSource = !SCREEN_IS_TOP \
-                && pc.class4PackedVramMode == 6u \
-                && compMode == 7 \
-                && forceLive3dCompMode7 \
-                && structured2DSlot \
-                && !structured2DOnly \
-                && !structured2DProtectedBlackOwned \
-                && screenOwnsLive3D; \
             bool preserveStructuredPair3DFromBrightness = compMode == 2 \
                 && compMode2StructuredPair \
                 && !structured2DAbove \
@@ -913,7 +757,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                 if (compMode == 7 \
                     && structuredFullRegularCapture3d \
                     && !structured2DAbove \
-                    && !structured2DProtectedBlackOwned \
+                    && !structured2DProtectedBlack \
                     && !structured3DOverDominant2D \
                     && !structuredFullRegularVisible3D \
                     && screenMatchesCapture3DSource \
@@ -942,17 +786,12 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             } \
             if (regularCaptureVisible2DAbove) \
                 composed = above2D; \
-            if (regularCaptureDominant2DPlane && !structured3DOverDominant2D) \
+            if (regularCaptureDominant2DPlane) \
                 composed = above2D; \
             if (compMode == 2 \
                 && (compMode2StructuredPair || (SCREEN_IS_TOP && regularCaptureUses3d && structuredAboveDominant)) \
                 && structuredPlane1Usable2D) \
                 composed = above2D; \
-            if (class4BottomStructuredAboveCurrentOwnedHistory \
-                && !structured2DNo3DCoverage) \
-                composed = structuredControlHas2DPayload ? above2D : pixel3D; \
-            if (class4BottomStructuredCurrentOwnedSource) \
-                composed = structuredControlHas2DPayload ? above2D : pixel3D; \
             val1 = composed; \
         } \
         else if (compMode == 4) \
@@ -964,26 +803,14 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             else if (both3dPlaceholders && pixel3DHasUsefulColor) \
             { \
                 val1 = pixel3D; \
-                if (brightnessMode == 2 && brightnessFactor > 0) \
-                    applyBrightnessDown(val1, brightnessFactor, 0xF); \
-                else if (brightnessMode == 1 && brightnessFactor > 0) \
-                    applyBrightnessUp(val1, brightnessFactor); \
             } \
             else if (both3dPlaceholders && captureHighresHasVisibleColor) \
             { \
                 val1 = captureHighresFromLive; \
-                if (brightnessMode == 2 && brightnessFactor > 0) \
-                    applyBrightnessDown(val1, brightnessFactor, 0xF); \
-                else if (brightnessMode == 1 && brightnessFactor > 0) \
-                    applyBrightnessUp(val1, brightnessFactor); \
             } \
             else if (both3dPlaceholders && captureBackedComp4Valid) \
             { \
                 val1 = capture3D; \
-                if (brightnessMode == 2 && brightnessFactor > 0) \
-                    applyBrightnessDown(val1, brightnessFactor, 0xF); \
-                else if (brightnessMode == 1 && brightnessFactor > 0) \
-                    applyBrightnessUp(val1, brightnessFactor); \
             } \
             else if (both3dPlaceholders && brightnessFactor > 0) \
             { \
@@ -1040,14 +867,14 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             } \
             if (compMode == 2 \
                 && (compMode2StructuredPair || (SCREEN_IS_TOP && regularCaptureUses3d && structuredAboveDominant)) \
-                && (isStructured2DVisible(val2) || structured2DProtectedBlackOwned)) \
+                && (isStructured2DVisible(val2) || structured2DProtectedBlack)) \
                 val1 = val2; \
         } \
         else if (compMode == 7) \
         { \
             bool plane1Is3dLayer = isPacked3dLayerSlot(val2); \
             bool plane2HadOverlayMarker = (val3.a & 0x80) != 0; \
-            bool plane2HasBlendControl = (((val3.r & ~kStructuredVulkan2DProtectedBlackTargetsBottomFlag) | val3.g | val3.b) != 0); \
+            bool plane2HasBlendControl = ((val3.r | val3.g | val3.b) != 0); \
             bool overlayOver3d = plane1Is3dLayer || plane2HadOverlayMarker || plane2HasBlendControl; \
             bool regularCaptureBackdropPixel = regularCaptureUses3d && isPacked3dPlaceholder(nearestPixel); \
             bool regularCaptureVisibleBlackPixel = regularCaptureUses3d \
@@ -1055,16 +882,39 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                 && !isPacked3dLayerSlot(nearestPixel) \
                 && nearestPixel.a != 0 \
                 && ((nearestPixel.r | nearestPixel.g | nearestPixel.b) == 0); \
+            bool regularCaptureVisibleBlackHasLocalSupport = false; \
+            if (regularCaptureVisibleBlackPixel) \
+            { \
+                for (int supportDy = -1; supportDy <= 1; supportDy++) \
+                { \
+                    int supportY = dsY + supportDy; \
+                    if (supportY < 0 || supportY >= 192) \
+                        continue; \
+                    for (int supportDx = -1; supportDx <= 1; supportDx++) \
+                    { \
+                        if (supportDx == 0 && supportDy == 0) \
+                            continue; \
+                        int supportX = sourceX + supportDx; \
+                        if (supportX < 0 || supportX >= 256) \
+                            continue; \
+                        Rgba6 support0 = unpackColor6(READ_PACKED_FN(supportY, supportX)); \
+                        Rgba6 support1 = unpackColor6(READ_PACKED_FN(supportY, 256 + supportX)); \
+                        if (hasPackedVisibleColor(support0) || hasPackedVisibleColor(support1)) \
+                            regularCaptureVisibleBlackHasLocalSupport = true; \
+                    } \
+                } \
+            } \
             bool regularCaptureProtectedBlackAbove = regularCaptureUses3d \
                 && structured2DSlot \
                 && structured2DAbove \
-                && structured2DProtectedBlackOwned; \
+                && structured2DProtectedBlack; \
             bool fullScreenRegularCapture3d = regularCaptureUses3d \
                 && !screenHasPartialRegularCapture3d; \
             bool regularCapture3DMatchesThisScreen = !fullScreenRegularCapture3d \
                 || ((screenOwnsLive3D || forceLive3dCompMode7) && screenMatchesCapture3DSource); \
             bool regularCaptureWideBlackPixel = regularCaptureVisibleBlackPixel \
                 && fullScreenRegularCapture3d \
+                && !regularCaptureVisibleBlackHasLocalSupport \
                 && !regularCaptureProtectedBlackAbove; \
             bool regularCaptureBlackResolvedByCapture = regularCaptureVisibleBlackPixel \
                 && fullScreenRegularCapture3d \
@@ -1073,7 +923,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                 && capture3DHasVisibleColor \
                 && !regularCaptureProtectedBlackAbove; \
             if (regularCaptureBlackResolvedByCapture) \
-                val1 = !pixel3DHasVisibleColor ? capture3D : pixel3D; \
+                val1 = regularCaptureVisibleBlackHasLocalSupport || !pixel3DHasVisibleColor ? capture3D : pixel3D; \
             else if (regularCaptureVisibleBlackPixel && !regularCaptureWideBlackPixel) \
                 val1 = nearestPixel; \
             bool regularCaptureProtectedBlackBand = regularCaptureUses3d \
@@ -1125,7 +975,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                     || regularCaptureVisibleBlackPixel \
                     || regularCaptureProtectedBlackAbove); \
             if (regularCaptureBlackResolvedByCapture) \
-                val1 = !pixel3DHasVisibleColor ? capture3D : pixel3D; \
+                val1 = regularCaptureVisibleBlackHasLocalSupport || !pixel3DHasVisibleColor ? capture3D : pixel3D; \
             else if (nonLiveFullRegularHistoryPixel) \
                 val1 = pixel3D; \
             else if (temporalCompMode7Uses3D && capture3DHasVisibleColor && regularCapture3DMatchesThisScreen && regularCaptureBackdropPixel && !overlayOver3d) \
@@ -1139,17 +989,6 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             else if (temporalCompMode7Uses3D && compMode7LineHas3D && pixel3DHasCoverage && !overlayOver3d && regularCaptureExplicit3dPixel && !regularCaptureProtectedBlackPixel) \
                 val1 = pixel3D; \
         } \
-        if (regularCaptureUses3d \
-            && screenHasPrevious3D \
-            && !structured2DProtectedBlackOwned \
-            && isRegularCaptureBlankPixel(val1)) \
-        { \
-            Rgba6 history3D = SCREEN_IS_TOP \
-                ? samplePreviousTop3DColorAtScaledPixel(shiftedScaledX, scaledY) \
-                : samplePreviousBottom3DColorAtScaledPixel(shiftedScaledX, scaledY); \
-            if ((history3D.a & 0x1F) > 0 && ((history3D.r | history3D.g | history3D.b) != 0)) \
-                val1 = history3D; \
-        } \
         pixel = val1; \
     } \
     else if (displayMode == 2 && vramCaptureUses3d) \
@@ -1162,21 +1001,12 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
         bool structured2DSlot = hasStructured2D3DSlot(val3); \
         bool structured2DAbove = hasStructured2DAbovePlane(val3); \
         bool structured2DProtectedBlack = hasStructured2DProtectedBlack(val3); \
-        bool structured2DProtectedBlackTargetsBottom = (val3.r & kStructuredVulkan2DProtectedBlackTargetsBottomFlag) != 0; \
-        bool structured2DProtectedBlackOwned = structured2DProtectedBlack \
-            && (SCREEN_IS_TOP ? !structured2DProtectedBlackTargetsBottom : structured2DProtectedBlackTargetsBottom); \
         bool structured2DNo3DCoverage = hasStructured2DNo3DCoverage(val3); \
         bool structured2DOnly = isStructured2DOnly(val3); \
         bool screenHasPrevious3D = SCREEN_IS_TOP ? (pc.previousTopSourceValid != 0u) : (pc.previousBottomSourceValid != 0u); \
         bool class4VramStructuredPair = pc.class4VramStructuredPair != 0u; \
-        bool class4PreservePackedVram = (pc.class4PackedVramMode != 0u) \
+        bool class4PreservePackedVram = (pc.class4PreservePackedVramValid != 0u) \
             && (SCREEN_IS_TOP ? (pc.class4PreservePackedVramScreenSwap != 0u) : (pc.class4PreservePackedVramScreenSwap == 0u)); \
-        bool class4ExactDisplayedBottom = (pc.class4PackedVramMode == 3u) \
-            && class4PreservePackedVram; \
-        bool class4AuthenticatedFrameOwnedBottom = (pc.class4PackedVramMode == 4u) \
-            && class4PreservePackedVram; \
-        bool class4Full2dOnlyVramPackedAuthoritative = (pc.class4PackedVramMode == 2u) \
-            && class4PreservePackedVram; \
         bool class4NoAbovePreservePackedVram = class4PreservePackedVram \
             && (pc.class4NoAboveVramStructuredPair != 0u); \
         int shiftedScaledX = scaledX + (xOffset * int(safeScale)); \
@@ -1195,31 +1025,14 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
             vram3D = SCREEN_IS_TOP \
                 ? samplePreviousTop3DColorAtScaledPixel(shiftedScaledX, scaledY) \
                 : samplePreviousBottom3DColorAtScaledPixel(shiftedScaledX, scaledY); \
-        if (structured2DNo3DCoverage \
-            && !class4ExactDisplayedBottom \
-            && !class4AuthenticatedFrameOwnedBottom) \
+        if (structured2DNo3DCoverage) \
         { \
             vram3D.r = 0; \
             vram3D.g = 0; \
             vram3D.b = 0; \
             vram3D.a = 0; \
         } \
-        int controlPayloadR = val3.r & ~kStructuredVulkan2DProtectedBlackTargetsBottomFlag; \
-        bool controlHas2DPayload = ((controlPayloadR | val3.g | val3.b) != 0); \
-        if (class4ExactDisplayedBottom) \
-        { \
-            if (!controlHas2DPayload) \
-                pixel = vram3D; \
-        } \
-        else if (class4AuthenticatedFrameOwnedBottom) \
-        { \
-            if (!controlHas2DPayload && (vram3D.a & 0x1F) > 0) \
-                pixel = vram3D; \
-        } \
-        else if (class4Full2dOnlyVramPackedAuthoritative) \
-        { \
-        } \
-        else if (structured2DOnly) \
+        if (structured2DOnly) \
         { \
         } \
         else if (structured2DSlot) \
@@ -1259,7 +1072,7 @@ Rgba6 FUNC_NAME(int sourceX, int dsY, int scaledX, int scaledY, uint safeScale) 
                 { \
                     composed = val2; \
                 } \
-                if (structured2DProtectedBlackOwned && structured2DAbove) \
+                if (structured2DProtectedBlack && structured2DAbove) \
                     composed = val2; \
             } \
             else if (structured2DAbove) \
@@ -1306,65 +1119,33 @@ void main()
         return;
 
     uint safeScale = max(pc.scale, 1u);
-    bool isTopScreen;
-    bool isBottomScreen;
-    int sourceX;
-    int dsY;
-    int scaledX;
-    int scaledY;
-    ivec2 outputCoord = ivec2(gid);
-
-    if (pc.regionMode != 0u)
-    {
-        uint regionWidth = max(pc.regionWidth, 1u);
-        uint regionHeight = max(pc.regionHeight, 1u);
-        if (gid.x >= regionWidth || gid.y >= regionHeight)
-            return;
-
-        isTopScreen = pc.regionTopScreen != 0u;
-        isBottomScreen = !isTopScreen;
-        outputCoord = ivec2(int(pc.regionX + gid.x), int(pc.regionY + gid.y));
-        float localX = (float(gid.x) + 0.5) / float(regionWidth);
-        float localY = (float(gid.y) + 0.5) / float(regionHeight);
-        sourceX = clamp(int(localX * 256.0), 0, 255);
-        dsY = clamp(int(localY * 192.0), 0, 191);
-        scaledX = clamp(int(localX * float(pc.rendererWidth)), 0, int(pc.rendererWidth) - 1);
-        scaledY = clamp(int(localY * float(pc.rendererHeight)), 0, int(pc.rendererHeight) - 1);
-    }
-    else
-    {
-        int sourceY = int(gid.y / safeScale);
-        isTopScreen = sourceY < 192;
-        isBottomScreen = sourceY >= 194 && sourceY < 386;
-
-        sourceX = int(gid.x / safeScale);
-        dsY = isTopScreen ? sourceY : (sourceY - 194);
-        scaledX = int(gid.x);
-        scaledY = int(gid.y);
-        if (isBottomScreen)
-            scaledY -= int((192u + 2u) * safeScale);
-    }
+    int sourceY = int(gid.y / safeScale);
+    bool isTopScreen = sourceY < 192;
+    bool isBottomScreen = sourceY >= 194 && sourceY < 386;
 
     if (!isTopScreen && !isBottomScreen)
     {
-        imageStore(outImage, outputCoord, vec4(0.0, 0.0, 0.0, 1.0));
+        imageStore(outImage, ivec2(gid), vec4(0.0, 0.0, 0.0, 1.0));
         return;
     }
 
+    int sourceX = int(gid.x / safeScale);
     if (sourceX < 0 || sourceX >= 256)
     {
-        imageStore(outImage, outputCoord, vec4(0.0, 0.0, 0.0, 1.0));
+        imageStore(outImage, ivec2(gid), vec4(0.0, 0.0, 0.0, 1.0));
         return;
     }
 
+    int dsY = isTopScreen ? sourceY : (sourceY - 194);
+    int scaledY = int(gid.y);
+    if (isBottomScreen)
+        scaledY -= int((192u + 2u) * safeScale);
+
     Rgba6 pixel;
-    if ((isTopScreen && pc.fastHighresOnlyTop != 0u)
-        || (isBottomScreen && pc.fastHighresOnlyBottom != 0u))
-        pixel = sampleFastHighresOnly(isTopScreen, scaledX, scaledY);
-    else if (isTopScreen)
-        pixel = composeTopScreenPixel(sourceX, dsY, scaledX, scaledY, safeScale);
+    if (isTopScreen)
+        pixel = composeTopScreenPixel(sourceX, dsY, int(gid.x), scaledY, safeScale);
     else
-        pixel = composeBottomScreenPixel(sourceX, dsY, scaledX, scaledY, safeScale);
+        pixel = composeBottomScreenPixel(sourceX, dsY, int(gid.x), scaledY, safeScale);
 
     int r = toColor8(pixel.r);
     int g = toColor8(pixel.g);
@@ -1373,7 +1154,7 @@ void main()
     // Keep compatibility with current texture color channel packing (BGR in RGBA slots).
     imageStore(
         outImage,
-        outputCoord,
+        ivec2(gid),
         vec4(float(b) * (1.0 / 255.0), float(g) * (1.0 / 255.0), float(r) * (1.0 / 255.0), 1.0)
     );
 }

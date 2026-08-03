@@ -45,6 +45,11 @@ namespace MelonDSAndroid
         std::atomic_bool rendererDebugToolsEnabled = false;
         std::atomic_bool rendererDebugBgObjEnabled = false;
         std::atomic_bool rendererDebugLatchTraceEnabled = false;
+        std::atomic_bool vulkanPerfLoggingEnabled = false;
+        std::atomic_bool vulkanGpu2DPerfLoggingEnabled = false;
+        std::atomic_bool vulkanLatchPerfLoggingEnabled = false;
+        std::atomic_bool vulkanAsyncFrameTailEnabled = false;
+        std::atomic_bool vulkanSetupPerfLoggingEnabled = false;
         std::atomic_uint vulkanDiagnosticFlags = 0;
         constexpr int kRenderer2DDebugNativeMode = -1;
         constexpr u32 kRenderer2DDebugAllFeatures =
@@ -208,6 +213,34 @@ namespace MelonDSAndroid
                 flags |= VulkanDiagnosticLegacyFinalAaMask;
 
             return flags;
+        }
+
+        bool ResolveVulkanGpu2DPerfLoggingEnabled()
+        {
+            return ReadBooleanSystemProperty("debug.melonds.vulkan.gpu2d_perf");
+        }
+
+        bool ResolveVulkanLatchPerfLoggingEnabled()
+        {
+            return ReadBooleanSystemProperty("debug.melonds.vulkan.latch_perf");
+        }
+
+        bool ResolveVulkanAsyncFrameTailEnabled()
+        {
+            return ReadBooleanSystemProperty("debug.melonds.vulkan.async_latch");
+        }
+
+        bool ResolveVulkanSetupPerfLoggingEnabled()
+        {
+            return ReadBooleanSystemProperty("debug.melonds.vulkan.setup_perf");
+        }
+
+        bool ResolveVulkanPerfLoggingEnabled()
+        {
+            return ReadBooleanSystemProperty("debug.melonds.vulkan.perf")
+                || ReadBooleanSystemProperty("debug.melonds.vulkan.gpu2d_perf")
+                || ReadBooleanSystemProperty("debug.melonds.vulkan.latch_perf")
+                || ReadBooleanSystemProperty("debug.melonds.vulkan.setup_perf");
         }
 
         bool ResolveRendererDebugToolsEnabled(const EmulatorConfiguration& configuration)
@@ -397,6 +430,11 @@ namespace MelonDSAndroid
         rendererDebugToolsEnabled.store(ResolveRendererDebugToolsEnabled(*currentConfiguration), std::memory_order_relaxed);
         rendererDebugBgObjEnabled.store(ResolveRendererDebugBgObjEnabled(*currentConfiguration), std::memory_order_relaxed);
         rendererDebugLatchTraceEnabled.store(ResolveRendererDebugLatchTraceEnabled(*currentConfiguration), std::memory_order_relaxed);
+        vulkanPerfLoggingEnabled.store(ResolveVulkanPerfLoggingEnabled(), std::memory_order_relaxed);
+        vulkanGpu2DPerfLoggingEnabled.store(ResolveVulkanGpu2DPerfLoggingEnabled(), std::memory_order_relaxed);
+        vulkanLatchPerfLoggingEnabled.store(ResolveVulkanLatchPerfLoggingEnabled(), std::memory_order_relaxed);
+        vulkanAsyncFrameTailEnabled.store(ResolveVulkanAsyncFrameTailEnabled(), std::memory_order_relaxed);
+        vulkanSetupPerfLoggingEnabled.store(ResolveVulkanSetupPerfLoggingEnabled(), std::memory_order_relaxed);
         vulkanDiagnosticFlags.store(ResolveVulkanDiagnosticFlags(), std::memory_order_relaxed);
         ResetRenderer2DDebugControls();
         ResetRenderer3DDebugControls();
@@ -517,11 +555,21 @@ namespace MelonDSAndroid
      * @param emulatorConfiguration The new emulator configuration
      */
     void updateEmulatorConfiguration(std::unique_ptr<EmulatorConfiguration> emulatorConfiguration) {
+        if (instance != nullptr)
+        {
+            instance->normalizeVulkanPipelineProfileForSession(
+                *emulatorConfiguration);
+        }
         std::shared_ptr<EmulatorConfiguration> sharedConfig = ShareConfiguration(std::move(emulatorConfiguration));
         currentConfiguration = sharedConfig;
         rendererDebugToolsEnabled.store(ResolveRendererDebugToolsEnabled(*sharedConfig), std::memory_order_relaxed);
         rendererDebugBgObjEnabled.store(ResolveRendererDebugBgObjEnabled(*sharedConfig), std::memory_order_relaxed);
         rendererDebugLatchTraceEnabled.store(ResolveRendererDebugLatchTraceEnabled(*sharedConfig), std::memory_order_relaxed);
+        vulkanPerfLoggingEnabled.store(ResolveVulkanPerfLoggingEnabled(), std::memory_order_relaxed);
+        vulkanGpu2DPerfLoggingEnabled.store(ResolveVulkanGpu2DPerfLoggingEnabled(), std::memory_order_relaxed);
+        vulkanLatchPerfLoggingEnabled.store(ResolveVulkanLatchPerfLoggingEnabled(), std::memory_order_relaxed);
+        vulkanAsyncFrameTailEnabled.store(ResolveVulkanAsyncFrameTailEnabled(), std::memory_order_relaxed);
+        vulkanSetupPerfLoggingEnabled.store(ResolveVulkanSetupPerfLoggingEnabled(), std::memory_order_relaxed);
         vulkanDiagnosticFlags.store(ResolveVulkanDiagnosticFlags(), std::memory_order_relaxed);
 
         if (instance == nullptr)
@@ -715,6 +763,35 @@ namespace MelonDSAndroid
     {
         return rendererDebugToolsEnabled.load(std::memory_order_relaxed)
             && rendererDebugLatchTraceEnabled.load(std::memory_order_relaxed);
+    }
+
+    bool isVulkanGpu2DPerfLoggingEnabled()
+    {
+        return rendererDebugToolsEnabled.load(std::memory_order_relaxed)
+            && vulkanGpu2DPerfLoggingEnabled.load(std::memory_order_relaxed);
+    }
+
+    bool isVulkanPerfLoggingEnabled()
+    {
+        return rendererDebugToolsEnabled.load(std::memory_order_relaxed)
+            && vulkanPerfLoggingEnabled.load(std::memory_order_relaxed);
+    }
+
+    bool isVulkanLatchPerfLoggingEnabled()
+    {
+        return rendererDebugToolsEnabled.load(std::memory_order_relaxed)
+            && vulkanLatchPerfLoggingEnabled.load(std::memory_order_relaxed);
+    }
+
+    bool isVulkanAsyncFrameTailEnabled()
+    {
+        return vulkanAsyncFrameTailEnabled.load(std::memory_order_relaxed);
+    }
+
+    bool isVulkanSetupPerfLoggingEnabled()
+    {
+        return rendererDebugToolsEnabled.load(std::memory_order_relaxed)
+            && vulkanSetupPerfLoggingEnabled.load(std::memory_order_relaxed);
     }
 
     Renderer2DDebugControlState getRenderer2DDebugControls()
@@ -1099,10 +1176,10 @@ namespace MelonDSAndroid
             instance->clearPreparedRendererDebugSnapshotForDebug();
     }
 
-    void startDenseScreenBurstCaptureForDebug(int frameCount, int stepFrames, u32 captureKindsMask)
+    void startDenseScreenBurstCaptureForDebug(int frameCount, int stepFrames, int warmupFrames, u32 captureKindsMask)
     {
         if (instance)
-            instance->startDenseScreenBurstCaptureForDebug(frameCount, stepFrames, captureKindsMask);
+            instance->startDenseScreenBurstCaptureForDebug(frameCount, stepFrames, warmupFrames, captureKindsMask);
     }
 
     bool isDenseScreenBurstCaptureCompleteForDebug()
@@ -1111,6 +1188,14 @@ namespace MelonDSAndroid
             return false;
 
         return instance->isDenseScreenBurstCaptureCompleteForDebug();
+    }
+
+    std::vector<u32> getDenseScreenBurstScheduleStatsForDebug()
+    {
+        if (!instance)
+            return {};
+
+        return instance->getDenseScreenBurstScheduleStatsForDebug();
     }
 
     int getDenseScreenBurstCaptureFrameCountForDebug()

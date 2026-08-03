@@ -25,8 +25,11 @@ struct FrameQueuePolicy
     bool AllowStealPending = true;
     bool AllowPreviousFrameReuse = true;
     bool AllowDropForDeadline = false;
+    bool ReclaimDeferredRealtimeFrameAfterTimeout = false;
     bool PreferOldestFrame = false;
     bool PreserveBacklogOnPresent = false;
+    bool ExpandPreservedBacklogToQueueCapacity = false;
+    bool BlockRenderWhenBacklogged = false;
     bool TreatBacklogTrimAsFastForwardSkip = false;
     bool UseLegacyOpenGlQueue = false;
 };
@@ -114,6 +117,7 @@ private:
 private:
     std::mutex frameLock;
     std::condition_variable presentFrameReadyCondition;
+    std::condition_variable freeFrameReadyCondition;
     std::array<Frame, FRAME_QUEUE_SIZE> frames{};
     std::queue<Frame*> freeQueue{};
     std::deque<Frame*> presentQueue{};

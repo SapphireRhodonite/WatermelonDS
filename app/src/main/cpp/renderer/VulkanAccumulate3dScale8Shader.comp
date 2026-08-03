@@ -25,10 +25,14 @@ layout(push_constant) uniform PushConsts
 
 const uint kMetaFlagRegularCaptureUses3d = 1u << 21u;
 const uint kMetaFlagVramCaptureUses3d = 1u << 22u;
-const uint kMetaFlagExactRegularCaptureUses3dTransport = 1u << 13u;
+const uint kMaxBlockScale = 8u;
 const uint kPackedScreenWidth = 256u;
 const uint kPackedScreenHeight = 192u;
 const int kStructuredVulkan2DProtectedBlackTargetsBottomFlag = 0x1;
+
+shared bool sProtectedBlack2D;
+shared bool sLegacyRegularCaptureBlack2D;
+shared bool sPackedAllowsOpaqueBlackAccumulator;
 
 struct Rgba6
 {
@@ -163,21 +167,19 @@ bool hasLegacyRegularCaptureBlack2D(int dsX, int dsY)
         && hasLocalVisiblePackedSupport(dsX, dsY);
 }
 
-bool packedAllowsOpaqueBlackAccumulator(int dsX, int dsY)
+bool packedAllowsOpaqueBlackAccumulator(int dsX, int dsY, bool protectedBlack2D, bool legacyRegularCaptureBlack2D)
 {
     Rgba6 plane0 = unpackColor6(readPacked(dsY, dsX));
-    Rgba6 plane1 = unpackColor6(readPacked(dsY, dsX + 256));
     Rgba6 control = unpackColor6(readPacked(dsY, dsX + 512));
 
-    if (hasProtectedBlack2D(dsX, dsY) || hasLegacyRegularCaptureBlack2D(dsX, dsY))
+    if (protectedBlack2D || legacyRegularCaptureBlack2D)
         return true;
 
     bool structuredSlot = (control.a & 0x40) != 0;
-    bool structuredAbove = (control.a & 0x80) != 0;
     if (structuredSlot)
     {
         if (lineUses3dCapture(dsY))
-            return hasProtectedBlack2D(dsX, dsY);
+            return protectedBlack2D;
         return true;
     }
 
@@ -187,88 +189,46 @@ bool packedAllowsOpaqueBlackAccumulator(int dsX, int dsY)
     return isOpaqueBlack2D(plane0);
 }
 
-bool hasNearbyVisibleSnapshotSupport(ivec2 coord, ivec2 size)
-{
-    int distance = int(pc.scale);
-    ivec2 offsets[8] = ivec2[](
-        ivec2(-distance, -distance),
-        ivec2(0, -distance),
-        ivec2(distance, -distance),
-        ivec2(-distance, 0),
-        ivec2(distance, 0),
-        ivec2(-distance, distance),
-        ivec2(0, distance),
-        ivec2(distance, distance)
-    );
-
-    for (int i = 0; i < 8; i++)
-    {
-        ivec2 sampleCoord = coord + offsets[i];
-        if (sampleCoord.x < 0 || sampleCoord.y < 0
-            || sampleCoord.x >= size.x || sampleCoord.y >= size.y)
-            continue;
-
-        vec4 samplePixel = imageLoad(newSnapshot, sampleCoord);
-        if (samplePixel.a > 0.0 && any(greaterThan(samplePixel.rgb, vec3(0.0))))
-            return true;
-    }
-
-    return false;
-}
-
-bool exactRegularBottomAllowsBlack3D(ivec2 coord, ivec2 size, int dsX, int dsY, vec4 newPixel)
-{
-    if (pc.topLcd != 0u
-        || pc.scale != 3u
-        || newPixel.a <= 0.0
-        || any(greaterThan(newPixel.rgb, vec3(0.0))))
-        return false;
-
-    uint meta = readPacked(dsY, 256 * 3);
-    uint displayMode = (meta >> 16u) & 0x3u;
-    bool regularCapture = (meta & kMetaFlagRegularCaptureUses3d) != 0u;
-    bool exactRegularCapture = (meta & kMetaFlagExactRegularCaptureUses3dTransport) != 0u;
-    bool vramCapture = (meta & kMetaFlagVramCaptureUses3d) != 0u;
-    if (displayMode != 1u || !regularCapture || !exactRegularCapture || vramCapture)
-        return false;
-
-    Rgba6 control = unpackColor6(readPacked(dsY, dsX + 512));
-    int compMode = control.a & 0xF;
-    bool structuredSlot = (control.a & 0x40) != 0;
-    if (!structuredSlot || (compMode != 4 && compMode != 7))
-        return false;
-
-    return hasNearbyVisibleSnapshotSupport(coord, size);
-}
-
 void main()
 {
-    ivec2 coord = ivec2(gl_GlobalInvocationID.xy);
+    int dsX = int(gl_WorkGroupID.x);
+    int dsY = int(gl_WorkGroupID.y);
+
+    if (gl_LocalInvocationIndex == 0u)
+    {
+        sProtectedBlack2D = hasProtectedBlack2D(dsX, dsY);
+        sLegacyRegularCaptureBlack2D = hasLegacyRegularCaptureBlack2D(dsX, dsY);
+        sPackedAllowsOpaqueBlackAccumulator = packedAllowsOpaqueBlackAccumulator(
+            dsX,
+            dsY,
+            sProtectedBlack2D,
+            sLegacyRegularCaptureBlack2D);
+    }
+    barrier();
+
+    ivec2 coord = ivec2(
+        int(gl_WorkGroupID.x * pc.scale + gl_LocalInvocationID.x),
+        int(gl_WorkGroupID.y * pc.scale + gl_LocalInvocationID.y));
+    if (gl_LocalInvocationID.x >= pc.scale || gl_LocalInvocationID.y >= pc.scale || pc.scale > kMaxBlockScale)
+        return;
+
     ivec2 size = imageSize(accumulated);
     if (coord.x >= size.x || coord.y >= size.y)
         return;
 
     vec4 newPixel = imageLoad(newSnapshot, coord);
-    uint safeScale = max(pc.scale, 1u);
-    int dsX = int(uint(coord.x) / safeScale);
-    int dsY = int(uint(coord.y) / safeScale);
-    if (dsX < 0 || dsX >= 256 || dsY < 0 || dsY >= 192)
-        return;
-
     bool newPixelVisible = newPixel.a > 0.0 && any(greaterThan(newPixel.rgb, vec3(0.0)));
-    bool newPixelAllowedBlack = newPixel.a > 0.0
-        && (packedAllowsOpaqueBlackAccumulator(dsX, dsY)
-            || exactRegularBottomAllowsBlack3D(coord, size, dsX, dsY, newPixel));
+    bool newPixelAllowedBlack = newPixel.a > 0.0 && sPackedAllowsOpaqueBlackAccumulator;
     if (newPixelVisible || newPixelAllowedBlack)
     {
         imageStore(accumulated, coord, newPixel);
     }
     if ((newPixel.a > 0.0 || pc.authoritativeProtectedBlack != 0u)
-        && hasProtectedBlack2D(dsX, dsY))
+        && sProtectedBlack2D)
         imageStore(accumulated, coord, vec4(0.0, 0.0, 0.0, 1.0));
     else if (newPixel.a > 0.0
         && any(greaterThan(newPixel.rgb, vec3(0.0)))
-        && hasLegacyRegularCaptureBlack2D(dsX, dsY))
+        && sLegacyRegularCaptureBlack2D)
     {
         imageStore(accumulated, coord, vec4(0.0, 0.0, 0.0, 1.0));
     }

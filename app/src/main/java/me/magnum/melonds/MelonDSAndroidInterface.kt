@@ -3,6 +3,7 @@ package me.magnum.melonds
 import me.magnum.melonds.common.UriFileHandler
 import me.magnum.melonds.domain.model.VulkanDriverConfiguration
 import me.magnum.melonds.domain.model.VulkanDriverMode
+import me.magnum.melonds.domain.model.VulkanPipelineProfile
 
 object MelonDSAndroidInterface {
     const val RENDERER_CAP_OPENGL = 1 shl 0
@@ -27,7 +28,9 @@ object MelonDSAndroidInterface {
     )
     external fun getEmulatorGlContext(): Long
     external fun getRendererCapabilities(): Int
-    external fun canInitializeVulkanRendererNative(): Boolean
+    private external fun canInitializeVulkanRendererForProfileNative(
+        fastPathEnabled: Boolean,
+    ): Boolean
     external fun setVulkanCompatibilityOverridesNative(
         disableTimelineSemaphores: Boolean,
         disableDynamicTextureIndexing: Boolean,
@@ -63,9 +66,9 @@ object MelonDSAndroidInterface {
         }.getOrDefault(false)
     }
 
-    fun canInitializeVulkanRenderer(): Boolean {
+    fun canInitializeVulkanRenderer(profile: VulkanPipelineProfile): Boolean {
         return runCatching {
-            canInitializeVulkanRendererNative()
+            canInitializeVulkanRendererForProfileNative(profile.usesFastPath)
         }.getOrDefault(false)
     }
 

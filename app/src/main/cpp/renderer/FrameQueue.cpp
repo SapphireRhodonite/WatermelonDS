@@ -25,6 +25,21 @@ Frame* FrameQueue::getRenderFrame(const FrameQueuePolicy& requestedPolicy)
     stats.RenderFramesAcquired++;
     const FrameQueuePolicy policy = sanitizePolicy(requestedPolicy);
 
+    if (policy.BlockRenderWhenBacklogged)
+    {
+        freeFrameReadyCondition.wait(lock, [&] {
+            const u64 pendingDepth = static_cast<u64>(presentQueue.size()) + (pendingPresentFrame != nullptr ? 1u : 0u);
+            return !freeQueue.empty() && pendingDepth < policy.MaxBacklogDepth;
+        });
+
+        Frame* frame = freeQueue.front();
+        freeQueue.pop();
+        frame->frameId = nextFrameId++;
+        frame->queuedAtNs = 0;
+        frame->presentTimelineValue = 0;
+        return frame;
+    }
+
     if (!freeQueue.empty())
     {
         Frame* frame = freeQueue.front();
@@ -116,6 +131,7 @@ Frame* FrameQueue::getPresentFrame(
         stats.PresentFramesDroppedByPolicy += staleFrameCount;
 
         presentQueue.clear();
+        freeFrameReadyCondition.notify_all();
         previousFrame = frame;
         recordPresentedFrameAgeLocked(frame, nowNs);
         updateBacklogStatsLocked();
@@ -160,6 +176,7 @@ Frame* FrameQueue::getPresentFrame(
     stats.PresentFramesDroppedByPolicy += staleFrameCount;
 
     presentQueue.clear();
+    freeFrameReadyCondition.notify_all();
     previousFrame = frame;
     recordPresentedFrameAgeLocked(frame, nowNs);
     updateBacklogStatsLocked();
@@ -229,8 +246,10 @@ Frame* FrameQueue::getPresentCandidate(
         stats.StaleFramesDropped += staleFrameCount;
         stats.PresentFramesDroppedByPolicy += staleFrameCount;
         presentQueue.clear();
+        freeFrameReadyCondition.notify_all();
     }
     updateBacklogStatsLocked();
+    freeFrameReadyCondition.notify_all();
     return frame;
 }
 
@@ -253,6 +272,7 @@ void FrameQueue::recycleRenderFrame(Frame* frame)
 
     frame->queuedAtNs = 0;
     freeQueue.push(frame);
+    freeFrameReadyCondition.notify_one();
 }
 
 void FrameQueue::commitPresentedFrame(Frame* frame, const FrameQueuePolicy& requestedPolicy)
@@ -273,6 +293,7 @@ void FrameQueue::commitPresentedFrame(Frame* frame, const FrameQueuePolicy& requ
     {
         freeQueue.push(previousFrame);
         previousFrame->queuedAtNs = 0;
+        freeFrameReadyCondition.notify_one();
     }
 
     previousFrame = frame;
@@ -303,9 +324,14 @@ void FrameQueue::commitPresentedFrame(Frame* frame, const FrameQueuePolicy& requ
             stats.PresentFramesDroppedByPolicy += staleFrameCount;
         }
         presentQueue.clear();
+        freeFrameReadyCondition.notify_all();
     }
 
-    dropPendingFramesToBacklogLocked(policy.MaxBacklogDepth, policy.TreatBacklogTrimAsFastForwardSkip);
+    dropPendingFramesToBacklogLocked(
+        policy.ExpandPreservedBacklogToQueueCapacity && policy.PreserveBacklogOnPresent
+            ? FRAME_QUEUE_SIZE - 1
+            : policy.MaxBacklogDepth,
+        policy.TreatBacklogTrimAsFastForwardSkip);
     updateBacklogStatsLocked();
 }
 
@@ -318,6 +344,24 @@ void FrameQueue::deferPresentedFrame(Frame* frame, const FrameQueuePolicy& reque
     const FrameQueuePolicy policy = sanitizePolicy(requestedPolicy);
     if (!policy.AllowDropForDeadline)
     {
+        if (policy.ReclaimDeferredRealtimeFrameAfterTimeout)
+        {
+            constexpr u64 kRealtimeDeferredFrameMaxAgeNs = 250'000'000ull;
+            const u64 nowNs = MelonDSAndroid::PerfNowNs();
+            if (pendingPresentFrame->queuedAtNs != 0
+                && nowNs - pendingPresentFrame->queuedAtNs > kRealtimeDeferredFrameMaxAgeNs)
+            {
+                recordDroppedFrameLocked(pendingPresentFrame, PresentDropCause::Stale, nowNs);
+                freeQueue.push(pendingPresentFrame);
+                stats.StaleFramesDropped++;
+                stats.PresentFramesDroppedByPolicy++;
+                pendingPresentFrame = nullptr;
+                updateBacklogStatsLocked();
+                freeFrameReadyCondition.notify_all();
+                return;
+            }
+        }
+
         // In realtime mode, don't keep a failed candidate pinned as pending.
         // Requeue it so the next present attempt can pick a fresher frame.
         if (policy.PreferOldestFrame)
@@ -344,6 +388,7 @@ void FrameQueue::deferPresentedFrame(Frame* frame, const FrameQueuePolicy& reque
             freeQueue.push(pendingPresentFrame);
             stats.PresentFramesDroppedByPolicy++;
             recordDroppedFrameLocked(pendingPresentFrame, PresentDropCause::Deadline, nowNs);
+            freeFrameReadyCondition.notify_one();
         }
         pendingPresentFrame = nullptr;
         updateBacklogStatsLocked();
@@ -433,7 +478,9 @@ void FrameQueue::pushRenderedFrame(Frame* frame, const FrameQueuePolicy& request
     }
 
     dropPendingFramesToBacklogLocked(
-        policy.MaxBacklogDepth > 0 ? policy.MaxBacklogDepth - 1 : 0,
+        policy.ExpandPreservedBacklogToQueueCapacity && policy.PreserveBacklogOnPresent
+            ? FRAME_QUEUE_SIZE - 1
+            : (policy.MaxBacklogDepth > 0 ? policy.MaxBacklogDepth - 1 : 0),
         policy.TreatBacklogTrimAsFastForwardSkip);
     presentQueue.push_front(frame);
     stats.RenderFramesQueued++;
@@ -447,6 +494,7 @@ void FrameQueue::discardRenderedFrame(Frame* frame)
     frame->queuedAtNs = 0;
     freeQueue.push(frame);
     stats.RenderFramesDiscarded++;
+    freeFrameReadyCondition.notify_one();
 }
 
 void FrameQueue::requestPresentationResync()
@@ -480,6 +528,7 @@ void FrameQueue::requestPresentationResync()
     // the new configuration and reopens flicker/corruption on IR changes.
     suppressPreviousFrameReuse = true;
     updateBacklogStatsLocked();
+    freeFrameReadyCondition.notify_all();
 }
 
 void FrameQueue::requestFastForwardPresentationTransition()
@@ -502,6 +551,7 @@ void FrameQueue::requestFastForwardPresentationTransition()
 
     suppressPreviousFrameReuse = false;
     updateBacklogStatsLocked();
+    freeFrameReadyCondition.notify_all();
 }
 
 void FrameQueue::clear()
@@ -520,6 +570,7 @@ void FrameQueue::clear()
     suppressPreviousFrameReuse = false;
     stats = FrameQueueStats{};
     rebuildFreeQueueLocked();
+    freeFrameReadyCondition.notify_all();
 
     EGLDisplay currentDisplay = eglGetCurrentDisplay();
     const EGLContext currentContext = eglGetCurrentContext();
@@ -596,6 +647,7 @@ void FrameQueue::dropPendingFramesToBacklogLocked(u64 maxBacklogDepth, bool trea
         }
     }
     updateBacklogStatsLocked();
+    freeFrameReadyCondition.notify_all();
 }
 
 void FrameQueue::recordPresentedFrameAgeLocked(Frame* frame, u64 nowNs)

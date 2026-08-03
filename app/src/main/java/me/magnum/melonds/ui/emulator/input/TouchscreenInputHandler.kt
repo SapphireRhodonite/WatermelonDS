@@ -14,20 +14,27 @@ class TouchscreenInputHandler(
     private val viewRectProvider: (() -> RectF)? = null,
 ) : BaseInputHandler(inputListener) {
     private val touchPoint: Point = Point()
+    private var touchActive = false
 
     @SuppressLint("ClickableViewAccessibility")
     override fun onTouch(v: View, event: MotionEvent): Boolean {
-        when (event.action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                touchActive = true
                 inputListener.onKeyPress(Input.TOUCHSCREEN)
                 inputListener.onTouch(normalizeTouchCoordinates(event, v.width, v.height))
             }
             MotionEvent.ACTION_MOVE -> {
-                inputListener.onTouch(normalizeTouchCoordinates(event, v.width, v.height))
+                if (touchActive) {
+                    inputListener.onTouch(normalizeTouchCoordinates(event, v.width, v.height))
+                }
             }
-            MotionEvent.ACTION_UP -> {
-                inputListener.onKeyReleased(Input.TOUCHSCREEN)
-                onScreenRelease()
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                if (touchActive) {
+                    inputListener.onKeyReleased(Input.TOUCHSCREEN)
+                    onScreenRelease()
+                    touchActive = false
+                }
             }
         }
         return true

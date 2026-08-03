@@ -5,6 +5,7 @@
 #include <memory>
 #include "renderer/Renderer.h"
 #include "renderer/VulkanFilterMode.h"
+#include "VulkanPipelineProfile.h"
 
 namespace MelonDSAndroid
 {
@@ -48,6 +49,8 @@ struct VulkanRenderSettings : public RenderSettings
     bool betterPolygons;
     int scale;
     bool useSimplePipeline = true;
+    melonDS::VulkanPipelineProfile pipelineProfile =
+        melonDS::VulkanPipelineProfile::Compatibility;
     bool rendererDebugToolsEnabled;
     bool rendererDebugBgObjEnabled;
     bool rendererDebugLatchTraceEnabled;

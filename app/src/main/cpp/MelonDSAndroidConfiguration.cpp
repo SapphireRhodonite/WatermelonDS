@@ -40,12 +40,27 @@ bool getEnumOrdinal(JNIEnv* env, jobject enumObject, jint* ordinalOut)
         return false;
 
     jclass enumClass = env->GetObjectClass(enumObject);
+    if (enumClass == nullptr || env->ExceptionCheck())
+    {
+        env->ExceptionClear();
+        return false;
+    }
+
     jmethodID ordinalMethod = env->GetMethodID(enumClass, "ordinal", "()I");
     if (ordinalMethod == nullptr)
+    {
+        if (env->ExceptionCheck())
+            env->ExceptionClear();
+        env->DeleteLocalRef(enumClass);
         return false;
+    }
 
     *ordinalOut = env->CallIntMethod(enumObject, ordinalMethod);
-    return !env->ExceptionCheck();
+    const bool success = !env->ExceptionCheck();
+    if (!success)
+        env->ExceptionClear();
+    env->DeleteLocalRef(enumClass);
+    return success;
 }
 
 jfieldID getFieldIdOrClear(JNIEnv* env, jclass objectClass, const char* name, const char* signature)
@@ -314,6 +329,16 @@ std::unique_ptr<MelonDSAndroid::RenderSettings> MelonDSAndroidConfiguration::bui
     jclass renderSettingsClass = env->GetObjectClass(renderSettings);
     jmethodID getResolutionScalingMethod = env->GetMethodID(renderSettingsClass, "getResolutionScaling", "()I");
     jboolean threadedRendering = env->GetBooleanField(renderSettings, env->GetFieldID(renderSettingsClass, "threadedRendering", "Z"));
+    jobject vulkanPipelineProfileObject = getOptionalObjectField(
+        env,
+        renderSettings,
+        renderSettingsClass,
+        "vulkanPipelineProfile",
+        "Lme/magnum/melonds/domain/model/VulkanPipelineProfile;");
+    jint vulkanPipelineProfileOrdinal = 0;
+    (void)getEnumOrdinal(env, vulkanPipelineProfileObject, &vulkanPipelineProfileOrdinal);
+    if (vulkanPipelineProfileObject != nullptr)
+        env->DeleteLocalRef(vulkanPipelineProfileObject);
     jboolean rendererDebugToolsEnabled = env->GetBooleanField(renderSettings, env->GetFieldID(renderSettingsClass, "rendererDebugToolsEnabled", "Z"));
     jboolean rendererDebugBgObjEnabled = env->GetBooleanField(renderSettings, env->GetFieldID(renderSettingsClass, "rendererDebugBgObjEnabled", "Z"));
     jboolean rendererDebugLatchTraceEnabled = env->GetBooleanField(renderSettings, env->GetFieldID(renderSettingsClass, "rendererDebugLatchTraceEnabled", "Z"));
@@ -353,10 +378,13 @@ std::unique_ptr<MelonDSAndroid::RenderSettings> MelonDSAndroidConfiguration::bui
     {
         settings = std::make_unique<MelonDSAndroid::VulkanRenderSettings>(
             MelonDSAndroid::VulkanRenderSettings {
-                .threadedRendering = (bool) threadedRendering,
+                .threadedRendering = true,
                 .betterPolygons = true,
                 .scale = internalResolutionScaling,
                 .useSimplePipeline = true,
+                .pipelineProfile = vulkanPipelineProfileOrdinal == 1
+                    ? melonDS::VulkanPipelineProfile::FastPath
+                    : melonDS::VulkanPipelineProfile::Compatibility,
                 .rendererDebugToolsEnabled = rendererDebugToolsEnabled != 0,
                 .rendererDebugBgObjEnabled = rendererDebugBgObjEnabled != 0,
                 .rendererDebugLatchTraceEnabled = rendererDebugLatchTraceEnabled != 0,

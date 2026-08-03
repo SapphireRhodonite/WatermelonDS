@@ -69,6 +69,7 @@ interface SettingsRepository {
     fun getVideoInternalResolutionScaling(): Flow<Int>
     fun getVideoFiltering(): Flow<VideoFiltering>
     fun isThreadedRenderingEnabled(): Flow<Boolean>
+    fun isVulkanFastPathEnabled(): Flow<Boolean>
     fun isRendererDebugToolsEnabled(): Flow<Boolean>
     fun isRendererDebugBgObjEnabled(): Flow<Boolean>
     fun isRendererDebugLatchTraceEnabled(): Flow<Boolean>

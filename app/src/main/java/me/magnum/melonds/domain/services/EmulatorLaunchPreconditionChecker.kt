@@ -2,12 +2,14 @@ package me.magnum.melonds.domain.services
 
 import android.content.Context
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import me.magnum.melonds.MelonDSAndroidInterface
 import me.magnum.melonds.common.romprocessors.RomFileProcessorFactory
 import me.magnum.melonds.domain.model.ConfigurationDirResult
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.VideoRenderer
+import me.magnum.melonds.domain.model.VulkanPipelineProfile
 import me.magnum.melonds.domain.model.emulator.validation.FirmwareLaunchPreconditionCheckResult
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.model.emulator.validation.RomLaunchPreconditionCheckResult
@@ -137,9 +139,12 @@ class EmulatorLaunchPreconditionChecker(
             MelonDSAndroidInterface.configureVulkanDriver(
                 settingsRepository.getVulkanDriverConfiguration(context.applicationInfo.nativeLibraryDir)
             )
+            val pipelineProfile = VulkanPipelineProfile.fromFastPathPreference(
+                settingsRepository.isVulkanFastPathEnabled().first()
+            )
             when {
                 !MelonDSAndroidInterface.isVulkanRendererSupported() -> RendererValidationFailure.UNSUPPORTED
-                !MelonDSAndroidInterface.canInitializeVulkanRenderer() -> RendererValidationFailure.INIT_FAILED
+                !MelonDSAndroidInterface.canInitializeVulkanRenderer(pipelineProfile) -> RendererValidationFailure.INIT_FAILED
                 else -> null
             }
         }

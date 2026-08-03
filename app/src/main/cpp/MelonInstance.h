@@ -1,8 +1,11 @@
 #ifndef MELONINSTANCE_H
 #define MELONINSTANCE_H
 
+#include <array>
+#include <condition_variable>
 #include <string>
 #include <atomic>
+#include <thread>
 #include <mutex>
 #include "Args.h"
 #include "Configuration.h"
@@ -18,6 +21,7 @@
 #include "renderer/VulkanSurfacePresenter.h"
 #include "retroachievements/RetroAchievementsManager.h"
 #include "net/Net.h"
+#include "VulkanSessionProfile.h"
 
 using namespace melonDS;
 
@@ -68,6 +72,76 @@ public:
     bool presentVulkanFrame(
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> deadline,
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> budgetDeadline);
+    struct CaptureSourceStaging
+    {
+        bool filled = false;
+        bool sourceValid = false;
+        alignas(8) std::array<u32, 256 * 192> capture3dSource {};
+        std::array<u8, 192> captureLineUses3dMask {};
+    };
+    CaptureSourceStaging captureStaging;
+    void fillCaptureStagingFromRenderer();
+
+    struct PackedRawStaging
+    {
+        bool valid = false;
+        alignas(8) std::array<u32, 769 * 192> top {};
+        alignas(8) std::array<u32, 769 * 192> bottom {};
+    };
+    PackedRawStaging packedRawStaging;
+    bool vramAltHasLast = false;
+    bool vramAltLastTopWasVram = false;
+    u32 vramAltToggles = 0;
+    u32 vramAltFramesSinceToggle = 255;
+
+
+
+    struct VulkanFrameTailInputs
+    {
+        int frontBuffer;
+        bool preparedFrameScreenSwap;
+        bool packedFrameScreenSwap;
+        bool isSleeping;
+        bool shouldCaptureRewindState;
+    };
+    struct VulkanFrameTailResult
+    {
+        bool hasValidFrame;
+        bool shouldCaptureRewindState;
+    };
+    VulkanFrameTailResult processFrameTail(
+        Frame* renderFrame,
+        bool isRendererAccelerated,
+        FrameBackend frameBackend,
+        const FrameQueuePolicy& frameQueuePolicy,
+        int vulkanRenderScale,
+        bool measuringVulkan,
+        const VulkanFrameTailInputs& tailInputs);
+
+    struct FrameTailJob
+    {
+        Frame* renderFrame = nullptr;
+        bool isRendererAccelerated = false;
+        FrameBackend frameBackend = FrameBackend::VulkanImage;
+        FrameQueuePolicy frameQueuePolicy {};
+        int vulkanRenderScale = 1;
+        bool measuringVulkan = false;
+        VulkanFrameTailInputs inputs {};
+    };
+    std::thread frameTailWorker;
+    std::mutex frameTailMutex;
+    std::condition_variable frameTailCondition;
+    FrameTailJob frameTailJob {};
+    VulkanFrameTailResult frameTailResult {};
+    Frame* frameTailLastFrame = nullptr;
+    bool frameTailJobPending = false;
+    bool frameTailResultValid = false;
+    bool frameTailWorkerExit = false;
+    bool asyncFrameTailEnabled = false;
+    void frameTailWorkerLoop();
+    void kickFrameTail(const FrameTailJob& job);
+    void joinPendingFrameTail();
+    void stopFrameTailWorker();
     void requestVulkanPresentationResync();
     void requestVulkanFastForwardPresentationTransition();
     std::vector<u32> captureCurrentFrameForDebug();
@@ -92,8 +166,9 @@ public:
     int getCurrentFrameIndexForDebug() const;
     void requestPreparedRendererDebugSnapshotForDebug();
     void clearPreparedRendererDebugSnapshotForDebug();
-    void startDenseScreenBurstCaptureForDebug(int frameCount, int stepFrames, u32 captureKindsMask);
+    void startDenseScreenBurstCaptureForDebug(int frameCount, int stepFrames, int warmupFrames, u32 captureKindsMask);
     bool isDenseScreenBurstCaptureCompleteForDebug() const;
+    std::vector<u32> getDenseScreenBurstScheduleStatsForDebug() const;
     int getDenseScreenBurstCaptureFrameCountForDebug() const;
     int getDenseScreenBurstCaptureFrameIdForDebug(int index) const;
     std::vector<u32> getDenseScreenBurstCaptureFrameForDebug(int index) const;
@@ -109,6 +184,8 @@ public:
     void dumpDebugSnapshot();
 
     void updateConfiguration(std::shared_ptr<EmulatorConfiguration> newConfiguration);
+    void normalizeVulkanPipelineProfileForSession(
+        EmulatorConfiguration& newConfiguration) const noexcept;
     void requestNdsSaveWrite(const u8* saveData, u32 saveLength, u32 writeOffset, u32 writeLength);
     void requestGbaSaveWrite(const u8* saveData, u32 saveLength, u32 writeOffset, u32 writeLength);
     void requestFirmwareSaveWrite(const u8* saveData, u32 saveLength, u32 writeOffset, u32 writeLength);
@@ -185,7 +262,13 @@ private:
         bool complete = false;
         int requestedFrameCount = 0;
         int captureStepFrames = 1;
-        int nextCaptureFrame = 0;
+        int warmupFramesRequested = 0;
+        int warmupFramesObserved = 0;
+        int eligibleCallbacksObserved = 0;
+        int callbacksUntilNextCapture = 0;
+        int firstCaptureOrdinal = 0;
+        int lastCaptureOrdinal = 0;
+        u64 generation = 0;
         u32 captureKindsMask = 0;
         std::vector<DenseScreenBurstFrame> frames;
     };
@@ -201,7 +284,16 @@ private:
     void clearLatchedSoftPackedFrameSnapshot();
     bool updateVulkanTemporal3dHistoryGate();
     bool isVulkanTemporal3dHistoryGateActive() const;
-    bool latchSoftPackedFrameSnapshot(const Frame* frame, int frontBuffer, bool screenSwap, bool useStructuredVulkan2D);
+    bool latchSoftPackedFrameSnapshotCompatibility(
+        const Frame* frame,
+        int frontBuffer,
+        bool screenSwap,
+        bool useStructuredVulkan2D);
+    bool latchSoftPackedFrameSnapshotFastPath(
+        const Frame* frame,
+        int frontBuffer,
+        bool screenSwap,
+        bool useStructuredVulkan2D);
     std::vector<u32> captureCurrentPackedPrimaryForDebug(bool topScreen);
     std::vector<u32> captureCurrentComp4PlaceholderForDebug(bool topScreen);
     std::vector<u32> captureLiveScreenFrameForDebug(Frame* frameOverride, int scaleOverride);
@@ -226,6 +318,7 @@ private:
     std::atomic<float> slot2AnalogX = 0.0f;
     std::atomic<float> slot2AnalogY = 0.0f;
 
+    const VulkanSessionProfile vulkanSessionProfile;
     std::shared_ptr<EmulatorConfiguration> currentConfiguration;
     FrameQueue frameQueue;
     std::unique_ptr<VulkanOutput> vulkanOutput;
@@ -242,14 +335,17 @@ private:
     bool hasLastValidTopScreenCapture3dDsFrame = false;
     bool hasLastValidBottomScreenCapture3dDsFrame = false;
     bool vulkanRegularCaptureTransitionResyncPending = false;
+    bool vulkanCaptureVramSeedPending = false;
+    std::atomic_bool vulkanRestored3dPrimePending = false;
     int vulkanStructuredCaptureGateFrames = 0;
     int vulkanTemporal3dHistoryGateFrames = 0;
     int vulkanTemporal3dNotReadyFrames = 0;
     int vulkanTemporal3dHistoryDebugLogsRemaining = 0;
     bool lastVulkanFastForwardPresentationState = false;
     int vulkanFastForwardPreviousFrameFallbackFrames = 0;
-    SoftPackedFrameSnapshot lastSoftPackedFrameSnapshot;
-    SoftPackedFrameSnapshot previousSoftPackedFrameSnapshot;
+    std::array<SoftPackedFrameSnapshot, 2> softPackedFrameSnapshots{};
+    SoftPackedFrameSnapshot* lastSoftPackedFrameSnapshotPtr = &softPackedFrameSnapshots[0];
+    SoftPackedFrameSnapshot* previousSoftPackedFrameSnapshotPtr = &softPackedFrameSnapshots[1];
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineATopPlane0{};
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineATopPlane1{};
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineATopControl{};
@@ -258,6 +354,8 @@ private:
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineABottomPlane1{};
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedEngineABottomControl{};
     std::array<u32, SoftPackedFrameSnapshot::kLineCount> cachedEngineABottomLineMeta{};
+    SoftPackedScreenStats cachedEngineATopStats{};
+    SoftPackedScreenStats cachedEngineABottomStats{};
     bool cachedEngineATopValid = false;
     bool cachedEngineABottomValid = false;
     std::array<u32, SoftPackedFrameSnapshot::kPixelCount> cachedAtypicalDisplayTopPrimary{};
@@ -278,17 +376,37 @@ private:
     bool vulkanRuntimeConfigLogged;
     bool vulkanRuntimeFailureHandled;
     int vulkanPrepareFailureCount;
+    int vulkanMissingRegularCaptureSourceFailureCount;
+    bool vulkanEmulationThreadPriorityRaised = false;
     u64 vulkanSoftPackedMissingWindow = 0;
     u64 vulkanHeldPreviousFrameWindow = 0;
     u64 vulkanPrepareFailedWindow = 0;
     int frame;
     PerfSampleWindow<120> vulkanRunFrameCpuWindow;
     PerfSampleWindow<120> vulkanSetupCpuWindow;
+    PerfSampleWindow<120> vulkanSetupScaleCpuWindow;
+    PerfSampleWindow<120> vulkanSetupPolicyCpuWindow;
+    PerfSampleWindow<120> vulkanSetupAcquireCpuWindow;
+    PerfSampleWindow<120> vulkanSetupPrepareCpuWindow;
+    PerfSampleWindow<120> vulkanSetupEnsureCpuWindow;
+    PerfSampleWindow<120> vulkanSetupShaderCpuWindow;
+    PerfSampleWindow<120> vulkanSetupTextureCpuWindow;
     PerfSampleWindow<120> vulkanNdsRunCpuWindow;
     PerfSampleWindow<120> vulkanPostRunCpuWindow;
     PerfSampleWindow<120> vulkanComposeCpuWindow;
     PerfSampleWindow<120> vulkanRaFrameCpuWindow;
     PerfSampleWindow<120> vulkanLatchSoftPackedCpuWindow;
+    PerfSampleWindow<120> vulkanLatchCopyCpuWindow;
+    PerfSampleWindow<120> vulkanLatchInitialCpuWindow;
+    PerfSampleWindow<120> vulkanLatchPromoteCpuWindow;
+    PerfSampleWindow<120> vulkanLatchRepairCpuWindow;
+    PerfSampleWindow<120> vulkanLatchVramPairCpuWindow;
+    PerfSampleWindow<120> vulkanLatchCacheCpuWindow;
+    PerfSampleWindow<120> vulkanLatchCaptureCpuWindow;
+    PerfSampleWindow<120> vulkanLatchTailCpuWindow;
+    PerfSampleWindow<120> vulkanLatchCarryCpuWindow;
+    PerfSampleWindow<120> vulkanLatchEngineCacheCpuWindow;
+    PerfSampleWindow<120> vulkanLatchPromoteOnlyCpuWindow;
     PerfSampleWindow<120> vulkanPostQueueCpuWindow;
     PerfSampleWindow<120> vulkanPostSaveCpuWindow;
     PerfSampleWindow<120> vulkanPostDebugCaptureCpuWindow;

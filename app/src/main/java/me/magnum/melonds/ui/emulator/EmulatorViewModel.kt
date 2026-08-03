@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onCompletion
@@ -65,6 +66,7 @@ import me.magnum.melonds.domain.model.SCREEN_WIDTH
 import me.magnum.melonds.domain.model.ScreenAlignment
 import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.VideoRenderer
+import me.magnum.melonds.domain.model.VulkanPipelineProfile
 import me.magnum.melonds.domain.model.defaultExternalAlignment
 import me.magnum.melonds.domain.model.defaultInternalAlignment
 import me.magnum.melonds.domain.model.emulator.EmulatorEvent
@@ -980,8 +982,11 @@ class EmulatorViewModel @Inject constructor(
         val currentState = _emulatorState.value
         sessionCoroutineScope.launch {
             if (settingsRepository.getCurrentVideoRenderer() == VideoRenderer.VULKAN) {
+                val pipelineProfile = VulkanPipelineProfile.fromFastPathPreference(
+                    settingsRepository.isVulkanFastPathEnabled().first()
+                )
                 val canUseVulkan = MelonDSAndroidInterface.isVulkanRendererSupported() &&
-                    MelonDSAndroidInterface.canInitializeVulkanRenderer()
+                    MelonDSAndroidInterface.canInitializeVulkanRenderer(pipelineProfile)
                 if (!canUseVulkan) {
                     val activeRenderer = getRuntimeRendererOrNull() ?: VideoRenderer.SOFTWARE
                     settingsRepository.setCurrentVideoRenderer(activeRenderer)

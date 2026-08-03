@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <application>
+        <profileable android:shell="true" />
+
         <receiver
             android:name=".debug.ReleaseStateCommandReceiver"
             android:enabled="true"
@@ -13,6 +15,7 @@
                 <action android:name="${applicationId}.SET_IR" />
                 <action android:name="${applicationId}.SET_FAST_FORWARD" />
                 <action android:name="${applicationId}.SET_FRAME_LIMIT_SPEED" />
+                <action android:name="${applicationId}.SET_JIT" />
                 <action android:name="${applicationId}.GET_FPS" />
                 <action android:name="${applicationId}.SET_BGOBJ_LOG" />
                 <action android:name="${applicationId}.SET_RENDERER_2D_DEBUG_CONTROLS" />

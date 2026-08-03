@@ -65,6 +65,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             context.debugCommandAction(ACTION_SET_RETROACHIEVEMENTS_SUFFIX) -> handleSetRetroAchievements(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_FAST_FORWARD_SUFFIX) -> handleSetFastForward(intent)
             context.debugCommandAction(ACTION_SET_FRAME_LIMIT_SPEED_SUFFIX) -> handleSetFrameLimitSpeed(entryPoint, intent)
+            context.debugCommandAction(ACTION_SET_JIT_SUFFIX) -> handleSetJit(entryPoint, intent)
             context.debugCommandAction(ACTION_GET_FPS_SUFFIX) -> handleGetFps()
             context.debugCommandAction(ACTION_SET_BGOBJ_LOG_SUFFIX) -> handleSetBgObjLog(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_RENDERER_2D_DEBUG_CONTROLS_SUFFIX) -> handleSetRenderer2DDebugControls(intent)
@@ -85,31 +86,44 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         }
     }
 
-    private fun handleSetRenderer(entryPoint: DebugCommandEntryPoint, intent: Intent) {
+    private fun handleSetRenderer(
+        entryPoint: DebugCommandEntryPoint,
+        intent: Intent,
+    ) {
         val rendererName = intent.firstStringExtra(EXTRA_RENDERER, EXTRA_VALUE)
             ?: throw IllegalArgumentException("Missing renderer extra")
         val renderer = parseRenderer(rendererName)
             ?: throw IllegalArgumentException("Unsupported renderer=$rendererName")
+        val fastPathEnabled = intent.firstBooleanExtra(EXTRA_FASTPATH_ENABLED, EXTRA_FASTPATH)
         entryPoint.sharedPreferences().edit(commit = true) {
             putString(KEY_VIDEO_RENDERER, renderer.name.lowercase(Locale.US))
+            fastPathEnabled?.let { putBoolean(KEY_VULKAN_FASTPATH_ENABLED, it) }
         }
         val refreshed = DebugCommandStateStore.requestSettingsRefresh()
+        val requestedProfile = fastPathEnabled?.let {
+            if (it) "fastpath" else "compatibility"
+        } ?: "unchanged"
         Log.w(
             TAG,
-            "action=set_renderer mode=release renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0}",
+            "action=set_renderer mode=release renderer=${renderer.name.lowercase(Locale.US)} profile=$requestedProfile fastPath=${fastPathEnabled?.let { if (it) 1 else 0 } ?: "unchanged"} applies=next_session refreshed=${if (refreshed) 1 else 0}",
         )
     }
 
     private fun handleSetRendererDebugTools(entryPoint: DebugCommandEntryPoint, intent: Intent) {
         val enabled = intent.firstBooleanExtra(EXTRA_ENABLED, EXTRA_VALUE)
             ?: throw IllegalArgumentException("Missing enabled extra")
+        val latchTraceEnabled =
+            intent.firstBooleanExtra(EXTRA_LATCH_TRACE_ENABLED)
         entryPoint.sharedPreferences().edit(commit = true) {
             putBoolean(KEY_RENDERER_DEBUG_TOOLS_ENABLED, enabled)
+            latchTraceEnabled?.let {
+                putBoolean(KEY_RENDERER_DEBUG_LATCH_TRACE_ENABLED, it)
+            }
         }
         val refreshed = DebugCommandStateStore.requestSettingsRefresh()
         Log.w(
             TAG,
-            "action=set_renderer_debug_tools mode=release enabled=${if (enabled) 1 else 0} refreshed=${if (refreshed) 1 else 0}",
+            "action=set_renderer_debug_tools mode=release enabled=${if (enabled) 1 else 0} latchTrace=${latchTraceEnabled?.let { if (it) 1 else 0 } ?: "unchanged"} refreshed=${if (refreshed) 1 else 0}",
         )
     }
 
@@ -182,6 +196,16 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         MelonEmulator.setFrameLimitSpeedMultiplier(multiplier)
         val refreshed = DebugCommandStateStore.requestSettingsRefresh()
         Log.w(TAG, "action=set_frame_limit_speed mode=release multiplier=$multiplier refreshed=${if (refreshed) 1 else 0}")
+    }
+
+    private fun handleSetJit(entryPoint: DebugCommandEntryPoint, intent: Intent) {
+        val enabled = intent.firstBooleanExtra(EXTRA_ENABLED, EXTRA_VALUE)
+            ?: throw IllegalArgumentException("Missing enabled extra")
+        entryPoint.sharedPreferences().edit(commit = true) {
+            putBoolean(KEY_ENABLE_JIT, enabled)
+        }
+        val refreshed = DebugCommandStateStore.requestSettingsRefresh()
+        Log.w(TAG, "action=set_jit mode=release enabled=${if (enabled) 1 else 0} refreshed=${if (refreshed) 1 else 0}")
     }
 
     private fun handleGetFps() {
@@ -431,8 +455,15 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
 
         try {
             if (burstCount > 1 && burstLive) {
-                DebugCommandStateStore.setDebugPauseHeld(false)
-                MelonEmulator.resumeEmulation()
+                if (resumeFrames <= 0 && resumeMs > 0) {
+                    DebugCommandStateStore.setDebugPauseHeld(false)
+                    MelonEmulator.resumeEmulation()
+                    delay(resumeMs.toLong())
+                }
+                val resumeAfterCaptureArmed: suspend () -> Unit = {
+                    DebugCommandStateStore.setDebugPauseHeld(false)
+                    MelonEmulator.resumeEmulation()
+                }
                 val captureBaseId = captureId ?: java.lang.Long.toHexString(System.currentTimeMillis())
                 val results = RendererDebugCaptureLogger.dumpDenseScreenBurstCapture(
                     configuredRenderer = renderer,
@@ -442,11 +473,17 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
                     burstStepFrames = burstStepFrames,
                     timeoutMs = timeoutMs,
                     captureKinds = captureKinds,
+                    warmupFrames = resumeFrames,
+                    onCaptureArmed = if (resumeFrames > 0 || resumeMs <= 0) {
+                        resumeAfterCaptureArmed
+                    } else {
+                        null
+                    },
                 )
                 val successCount = results.count { it.success }
                 Log.w(
                     TAG,
-                    "action=dump_renderer_capture mode=release renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0} paused=${if (pauseWasHeld) 1 else 0} liveBurst=1 burstCount=$burstCount burstStepFrames=$burstStepFrames captureId=$captureBaseId success=$successCount/${results.size} outputDir=${captureOutputDir.absolutePath}",
+                    "action=dump_renderer_capture mode=release renderer=${renderer.name.lowercase(Locale.US)} refreshed=${if (refreshed) 1 else 0} paused=${if (pauseWasHeld) 1 else 0} liveBurst=1 resumeMs=$resumeMs resumeFrames=$resumeFrames warmupMode=${if (resumeFrames > 0) "native_callbacks" else if (resumeMs > 0) "elapsed_ms" else "none"} burstCount=$burstCount burstStepFrames=$burstStepFrames captureId=$captureBaseId success=$successCount/${results.size} outputDir=${captureOutputDir.absolutePath}",
                 )
                 return
             }
@@ -653,11 +690,18 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         val stateUri = resolveStateUri(context, entryPoint, intent, preferExistingSlotFallback = true)
             ?: throw IllegalArgumentException("Missing load target. Provide slot or path.")
         val pauseAfterLoad = intent.getBooleanExtra(EXTRA_PAUSE_AFTER, false)
+        val pauseSequenceAtStart = DebugCommandStateStore.currentPauseCommandSequence()
         MelonEmulator.pauseEmulation()
         val success = try {
             MelonEmulator.loadState(stateUri)
         } finally {
-            if (pauseAfterLoad) {
+            val explicitPauseCommandArrived =
+                DebugCommandStateStore.currentPauseCommandSequence() != pauseSequenceAtStart
+            if (explicitPauseCommandArrived) {
+                if (!DebugCommandStateStore.isDebugPauseHeld()) {
+                    MelonEmulator.resumeEmulation()
+                }
+            } else if (pauseAfterLoad) {
                 DebugCommandStateStore.setDebugPauseHeld(true)
             } else {
                 DebugCommandStateStore.setDebugPauseHeld(false)
@@ -1062,20 +1106,27 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         private const val TAG = "DebugCommand"
         private const val KEY_RENDERER_DEBUG_TOOLS_ENABLED = "video_renderer_debug_tools_enabled"
         private const val KEY_VIDEO_RENDERER = "video_renderer"
+        private const val KEY_VULKAN_FASTPATH_ENABLED = "video_vulkan_fastpath_enabled"
         private const val KEY_VIDEO_INTERNAL_RESOLUTION = "video_internal_resolution"
         private const val KEY_FRAME_LIMIT_SPEED_MULTIPLIER = "frame_limit_speed_multiplier"
+        private const val KEY_ENABLE_JIT = "enable_jit"
         private const val KEY_RENDERER_DEBUG_BGOBJ_ENABLED = "video_renderer_debug_bgobj_enabled"
+        private const val KEY_RENDERER_DEBUG_LATCH_TRACE_ENABLED =
+            "video_renderer_debug_latch_trace_enabled"
         private const val KEY_RA_ENABLED = "ra_enabled"
         private const val KEY_RA_HARDCORE_ENABLED = "ra_hardcore_enabled"
         private const val RELEASE_STATE_COMMANDS_PROPERTY = "debug.melonds.release_state_commands"
         private const val GETPROP_BINARY = "/system/bin/getprop"
 
         private const val EXTRA_RENDERER = "renderer"
+        private const val EXTRA_FASTPATH_ENABLED = "fastpath_enabled"
+        private const val EXTRA_FASTPATH = "fastpath"
         private const val EXTRA_SCALE = "scale"
         private const val EXTRA_IR = "ir"
         private const val EXTRA_RUNTIME_CONSOLE = "runtime_console"
         private const val EXTRA_CONSOLE = "console"
         private const val EXTRA_ENABLED = "enabled"
+        private const val EXTRA_LATCH_TRACE_ENABLED = "latch_trace_enabled"
         private const val EXTRA_RA_ENABLED = "ra_enabled"
         private const val EXTRA_RA_HARDCORE_ENABLED = "ra_hardcore_enabled"
         private const val EXTRA_HARDCORE_ENABLED = "hardcore_enabled"
@@ -1174,6 +1225,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         private const val ACTION_SET_RETROACHIEVEMENTS_SUFFIX = "SET_RETROACHIEVEMENTS"
         private const val ACTION_SET_FAST_FORWARD_SUFFIX = "SET_FAST_FORWARD"
         private const val ACTION_SET_FRAME_LIMIT_SPEED_SUFFIX = "SET_FRAME_LIMIT_SPEED"
+        private const val ACTION_SET_JIT_SUFFIX = "SET_JIT"
         private const val ACTION_GET_FPS_SUFFIX = "GET_FPS"
         private const val ACTION_SET_BGOBJ_LOG_SUFFIX = "SET_BGOBJ_LOG"
         private const val ACTION_SET_RENDERER_2D_DEBUG_CONTROLS_SUFFIX = "SET_RENDERER_2D_DEBUG_CONTROLS"
@@ -1204,6 +1256,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             || action == context.debugCommandAction(ACTION_SET_RETROACHIEVEMENTS_SUFFIX)
             || action == context.debugCommandAction(ACTION_SET_FAST_FORWARD_SUFFIX)
             || action == context.debugCommandAction(ACTION_SET_FRAME_LIMIT_SPEED_SUFFIX)
+            || action == context.debugCommandAction(ACTION_SET_JIT_SUFFIX)
             || action == context.debugCommandAction(ACTION_GET_FPS_SUFFIX)
             || action == context.debugCommandAction(ACTION_SET_BGOBJ_LOG_SUFFIX)
             || action == context.debugCommandAction(ACTION_SET_RENDERER_2D_DEBUG_CONTROLS_SUFFIX)

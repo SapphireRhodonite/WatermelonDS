@@ -58,9 +58,15 @@ internal object DebugCommandStateStore {
 
     fun isDebugPauseHeld(): Boolean = debugPauseHeld
 
+    @Volatile
+    private var pauseCommandSequence: Long = 0
+
     fun setDebugPauseHeld(held: Boolean) {
         debugPauseHeld = held
+        pauseCommandSequence++
     }
+
+    fun currentPauseCommandSequence(): Long = pauseCommandSequence
 
     fun requestPauseAfterNextRunningRom(pauseAfterReady: Boolean) {
         pendingPauseAfterRunningRom = pauseAfterReady

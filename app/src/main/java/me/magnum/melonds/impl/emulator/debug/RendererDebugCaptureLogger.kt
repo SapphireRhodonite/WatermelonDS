@@ -71,9 +71,12 @@ internal object RendererDebugCaptureLogger {
         burstStepFrames: Int,
         timeoutMs: Long,
         captureKinds: Set<RendererDebugCaptureKind> = setOf(RendererDebugCaptureKind.SCREEN_FRAME),
+        warmupFrames: Int = 0,
+        onCaptureArmed: (suspend () -> Unit)? = null,
     ): List<RendererDebugCaptureResult> {
         val safeBurstCount = burstCount.coerceAtLeast(1)
         val safeStepFrames = burstStepFrames.coerceAtLeast(1)
+        val safeWarmupFrames = warmupFrames.coerceAtLeast(0)
         val requestedKinds = if (captureKinds.isEmpty()) {
             setOf(RendererDebugCaptureKind.SCREEN_FRAME)
         } else {
@@ -125,9 +128,21 @@ internal object RendererDebugCaptureLogger {
 
         RendererDebugBridge.clearPreparedRendererSnapshot()
         RendererDebugBridge.clearDenseScreenBurstCapture()
-        RendererDebugBridge.startDenseScreenBurstCapture(safeBurstCount, safeStepFrames, captureKindsMask)
+        RendererDebugBridge.startDenseScreenBurstCapture(
+            safeBurstCount,
+            safeStepFrames,
+            safeWarmupFrames,
+            captureKindsMask,
+        )
+        onCaptureArmed?.invoke()
 
-        val deadlineAt = System.nanoTime() + timeoutMs.coerceAtLeast(1L) * 1_000_000L
+        val warmupTimeoutMs = if (safeWarmupFrames > 0) {
+            (safeWarmupFrames.toLong() * 1_000L) / 24L + 5_000L
+        } else {
+            0L
+        }
+        val deadlineAt = System.nanoTime() +
+            (timeoutMs.coerceAtLeast(1L) + warmupTimeoutMs) * 1_000_000L
         while (System.nanoTime() < deadlineAt) {
             if (RendererDebugBridge.isDenseScreenBurstCaptureComplete()) {
                 break
@@ -135,6 +150,19 @@ internal object RendererDebugCaptureLogger {
             kotlinx.coroutines.delay(8L)
         }
 
+        val scheduleStats = RendererDebugBridge.getDenseScreenBurstScheduleStats()
+        val warmupFramesRequested = scheduleStats?.getOrNull(0) ?: -1
+        val warmupFramesObserved = scheduleStats?.getOrNull(1) ?: -1
+        val eligibleCallbacksObserved = scheduleStats?.getOrNull(2) ?: -1
+        val firstCaptureOrdinal = scheduleStats?.getOrNull(3) ?: -1
+        val lastCaptureOrdinal = scheduleStats?.getOrNull(4) ?: -1
+        val warmupSatisfied =
+            warmupFramesRequested == safeWarmupFrames && warmupFramesObserved >= safeWarmupFrames
+        val captureComplete = RendererDebugBridge.isDenseScreenBurstCaptureComplete()
+        Log.w(
+            TAG,
+            "captureId=$captureIdBase source=dense_burst stage=summary requestedWarmupFrames=$warmupFramesRequested observedWarmupFrames=$warmupFramesObserved eligibleCallbacks=$eligibleCallbacksObserved firstCaptureOrdinal=$firstCaptureOrdinal lastCaptureOrdinal=$lastCaptureOrdinal warmupSatisfied=${if (warmupSatisfied) 1 else 0} complete=${if (captureComplete) 1 else 0}",
+        )
         val availableFrameCount = RendererDebugBridge.getDenseScreenBurstCaptureFrameCount().coerceAtMost(safeBurstCount)
         val results = buildList {
             for (index in 0 until availableFrameCount) {
@@ -1030,10 +1058,15 @@ internal object RendererDebugCaptureLogger {
 
     private fun inferRenderer3dWidth(values: IntArray?): Int {
         val size = values?.size ?: return 0
-        if (size <= 0 || size % CAPTURE_3D_LINE_HEIGHT != 0) {
+        val basePixels = CAPTURE_3D_LINE_WIDTH * CAPTURE_3D_LINE_HEIGHT
+        if (size <= 0 || size % basePixels != 0) {
             return 0
         }
-        return size / CAPTURE_3D_LINE_HEIGHT
+        val scaleSquared = size / basePixels
+        val scale = (1..16).firstOrNull { candidate ->
+            candidate * candidate == scaleSquared
+        } ?: return 0
+        return CAPTURE_3D_LINE_WIDTH * scale
     }
 
     private fun inferRenderer3dHeight(values: IntArray?, width: Int): Int {

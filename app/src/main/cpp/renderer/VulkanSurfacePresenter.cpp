@@ -11,16 +11,18 @@
 #include "VulkanDispatch.h"
 #include "VulkanOutput.h"
 #include "VulkanSurfacePresenterFragmentShaderData.h"
+#include "VulkanSurfacePresenterCompatibilityFragmentShaderData.h"
 #include "VulkanSurfacePresenterVertexShaderData.h"
 
 namespace MelonDSAndroid
 {
 bool isFastForwardActive();
+bool areRendererDebugToolsEnabled();
 bool areRendererDebugBgObjLogsEnabled();
 
 namespace
 {
-constexpr u32 kMaxSurfaceVertexCount = 30;
+constexpr u32 kMaxSurfaceVertexCount = 240;
 constexpr VkDeviceSize kVertexBufferSize = static_cast<VkDeviceSize>(kMaxSurfaceVertexCount * 5u * sizeof(float));
 constexpr u32 kDescriptorSetCapacity = 64;
 constexpr u32 kDrawModeBackground = 0u;
@@ -30,11 +32,56 @@ constexpr u32 kDrawModeBottomScreen = 3u;
 constexpr u32 kDrawModeFilteredCompositeTop = 4u;
 constexpr u32 kDrawModeFilteredCompositeBottom = 5u;
 constexpr u32 kDrawModeRetroArchCompositeFrame = 6u;
+constexpr u32 kDrawModeCompositeTop = 7u;
+constexpr u32 kDrawModeCompositeBottom = 8u;
+constexpr u32 kDrawModeDirectHighresTop = 9u;
+constexpr u32 kDrawModeDirectHighresBottom = 10u;
+constexpr u32 kDrawModeDirectHighresCarryTop = 11u;
+constexpr u32 kDrawModeDirectHighresCarryBottom = 12u;
+constexpr u32 kDrawModeDirectOverlay2DTop = 13u;
+constexpr u32 kDrawModeDirectOverlay2DBottom = 14u;
+constexpr u32 kDrawModeDirectOverlay2DOnlyTop = 15u;
+constexpr u32 kDrawModeDirectOverlay2DOnlyBottom = 16u;
+constexpr u32 kDrawModeDirectOverlay2DOnlyTopPlane0 = 17u;
+constexpr u32 kDrawModeDirectOverlay2DOnlyBottomPlane0 = 18u;
+constexpr u32 kDrawModeDirectOverlay2DOnlyTopPlane1 = 19u;
+constexpr u32 kDrawModeDirectOverlay2DOnlyBottomPlane1 = 20u;
+constexpr u8 kComposedCarryWriterPhaseNone = 0u;
+constexpr u8 kComposedCarryWriterPhaseTopRegularComp7 = 1u;
+constexpr u8 kComposedCarryWriterPhaseBottomRegularComp7 = 2u;
+constexpr u8 kComposedCarryWriterPhaseBottomA2BlackMask = 3u;
+constexpr u8 kComposedCarryWriterPhaseBottomA2BlackMaskAfterRegular = 4u;
+constexpr u8 kComposedCarryWriterPhaseBottomA2BlackMaskAfterOpposite = 5u;
+constexpr u8 kBottomOneShotClass4PhaseNone = 0u;
+constexpr u8 kBottomOneShotClass4PhaseSparseOverlay = 1u;
+constexpr u8 kBottomOneShotClass4PhaseAfterNoAbove = 2u;
+constexpr u8 kBottomOneShotClass4PhaseResolved = 3u;
 constexpr u32 kNativeScreenWidth = 256u;
 constexpr u32 kNativeScreenHeight = 192u;
 constexpr u32 kNativeAtlasHeight = 386u;
 constexpr u32 kMaxRetroArchNativeDisplayScale = 8u;
 constexpr size_t kPrewarmedRetroArchSurfaceCount = 2u;
+constexpr VkImageUsageFlags kCompatibilityRetroArchImageUsage =
+    VK_IMAGE_USAGE_TRANSFER_SRC_BIT
+    | VK_IMAGE_USAGE_TRANSFER_DST_BIT
+    | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
+    | VK_IMAGE_USAGE_SAMPLED_BIT;
+
+[[nodiscard]] constexpr VkImageUsageFlags RetroArchImageUsage(
+    melonDS::VulkanPipelineProfile pipelineProfile)
+{
+    return kCompatibilityRetroArchImageUsage
+        | (melonDS::UsesVulkanFastPath(pipelineProfile)
+            ? VK_IMAGE_USAGE_STORAGE_BIT
+            : 0u);
+}
+
+static_assert(
+    RetroArchImageUsage(melonDS::VulkanPipelineProfile::Compatibility)
+    == kCompatibilityRetroArchImageUsage);
+static_assert(
+    RetroArchImageUsage(melonDS::VulkanPipelineProfile::FastPath)
+    == (kCompatibilityRetroArchImageUsage | VK_IMAGE_USAGE_STORAGE_BIT));
 constexpr std::array<VkFormat, 7> kPreferredSurfaceFormats = {
     VK_FORMAT_R8G8B8A8_UNORM,
     VK_FORMAT_B8G8R8A8_UNORM,
@@ -62,6 +109,44 @@ struct PresenterPushConstants
     u32 liveSourceScreenSwap;
     u32 class4VramStructuredPair;
     u32 class4NoAboveVramStructuredPair;
+    u32 class4PackedVramMode;
+    u32 class4PreservePackedVramScreenSwap;
+    u32 topStructuredHandoffNoCurrent3d;
+    u32 bottomStructuredHandoffNoCurrent3d;
+    u32 topStructuredHandoffSuppress3d;
+    u32 bottomStructuredHandoffSuppress3d;
+    u32 topComposedCarryValid;
+    u32 bottomComposedCarryValid;
+    u32 topComposedCarryRequired;
+    u32 bottomComposedCarryRequired;
+    u32 topPackedDirectRequired;
+    u32 bottomPackedDirectRequired;
+    u32 alternatingLive3dPingPong;
+    u32 packedSpecializationMask;
+    u32 suppressLateFinalBlackHistoryMask;
+    float viewportWidth;
+    float viewportHeight;
+};
+
+static_assert(sizeof(PresenterPushConstants) == 128u);
+
+struct CompatibilityPresenterPushConstants
+{
+    u32 drawMode;
+    u32 scale;
+    u32 rendererWidth;
+    u32 rendererHeight;
+    u32 packedStride;
+    u32 screenSwap;
+    u32 filtering;
+    u32 previousTopSourceValid;
+    u32 previousBottomSourceValid;
+    u32 captureSourceValid;
+    u32 captureSourceScreenSwapValid;
+    u32 captureSourceScreenSwap;
+    u32 liveSourceScreenSwap;
+    u32 class4VramStructuredPair;
+    u32 class4NoAboveVramStructuredPair;
     u32 class4PreservePackedVramValid;
     u32 class4PreservePackedVramScreenSwap;
     u32 topStructuredHandoffNoCurrent3d;
@@ -71,6 +156,8 @@ struct PresenterPushConstants
     float viewportWidth;
     float viewportHeight;
 };
+
+static_assert(sizeof(CompatibilityPresenterPushConstants) == 92u);
 
 struct PrewarmedRetroArchChains
 {
@@ -455,6 +542,7 @@ void VulkanSurfacePresenter::shutdown()
         detachSurface(surfaces.begin()->first);
     }
 
+    destroySurfacePipelineCache();
     destroySyncObjects();
     destroyCommonResources();
 
@@ -667,7 +755,31 @@ bool VulkanSurfacePresenter::createCommonResources()
     previousBottomRendererImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
     previousBottomRendererImageBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
 
-    const std::array<VkDescriptorSetLayoutBinding, 7> bindings = {
+    VkDescriptorSetLayoutBinding topComposedCarryImageBinding{};
+    topComposedCarryImageBinding.binding = 7;
+    topComposedCarryImageBinding.descriptorCount = 1;
+    topComposedCarryImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    topComposedCarryImageBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutBinding bottomComposedCarryImageBinding{};
+    bottomComposedCarryImageBinding.binding = 8;
+    bottomComposedCarryImageBinding.descriptorCount = 1;
+    bottomComposedCarryImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    bottomComposedCarryImageBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutBinding exactObjSourceImageBinding{};
+    exactObjSourceImageBinding.binding = 9;
+    exactObjSourceImageBinding.descriptorCount = 1;
+    exactObjSourceImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    exactObjSourceImageBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    VkDescriptorSetLayoutBinding bottomComp2OneShotCarryImageBinding{};
+    bottomComp2OneShotCarryImageBinding.binding = 10;
+    bottomComp2OneShotCarryImageBinding.descriptorCount = 1;
+    bottomComp2OneShotCarryImageBinding.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
+    bottomComp2OneShotCarryImageBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+
+    const std::array<VkDescriptorSetLayoutBinding, 11> bindings = {
         sampledTextureBinding,
         rendererImageBinding,
         topPackedBinding,
@@ -675,6 +787,10 @@ bool VulkanSurfacePresenter::createCommonResources()
         previousTopRendererImageBinding,
         capture3dBinding,
         previousBottomRendererImageBinding,
+        topComposedCarryImageBinding,
+        bottomComposedCarryImageBinding,
+        exactObjSourceImageBinding,
+        bottomComp2OneShotCarryImageBinding,
     };
 
     VkDescriptorSetLayoutCreateInfo descriptorSetLayoutInfo{};
@@ -689,7 +805,7 @@ bool VulkanSurfacePresenter::createCommonResources()
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
     poolSizes[0].descriptorCount = kDescriptorSetCapacity;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-    poolSizes[1].descriptorCount = kDescriptorSetCapacity * 3u;
+    poolSizes[1].descriptorCount = kDescriptorSetCapacity * 7u;
     poolSizes[2].type = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
     poolSizes[2].descriptorCount = kDescriptorSetCapacity * 3u;
 
@@ -742,6 +858,12 @@ bool VulkanSurfacePresenter::createCommonResources()
             &fragmentShaderModule))
         return false;
 
+    if (!createShaderModule(
+            melonDS_android_vulkan_surface_presenter_compatibility_frag_spv,
+            melonDS_android_vulkan_surface_presenter_compatibility_frag_spv_len,
+            &compatibilityFragmentShaderModule))
+        return false;
+
     auto createSampler = [&](VkFilter filter, VkSampler* sampler) -> bool {
         VkSamplerCreateInfo samplerInfo{};
         samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
@@ -787,6 +909,12 @@ void VulkanSurfacePresenter::destroyCommonResources()
     {
         vkDestroyShaderModule(device, fragmentShaderModule, nullptr);
         fragmentShaderModule = VK_NULL_HANDLE;
+    }
+
+    if (compatibilityFragmentShaderModule != VK_NULL_HANDLE)
+    {
+        vkDestroyShaderModule(device, compatibilityFragmentShaderModule, nullptr);
+        compatibilityFragmentShaderModule = VK_NULL_HANDLE;
     }
 
     if (pipelineLayout != VK_NULL_HANDLE)
@@ -890,6 +1018,24 @@ bool VulkanSurfacePresenter::resizeSurface(int surfaceId, u32 width, u32 height)
     surfaceState.requestedHeight = height;
     surfaceState.swapchainDirty = true;
     surfaceState.vertexBufferDirty = true;
+    surfaceState.bottomComp2OneShotCarryValid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Phase =
+        kBottomOneShotClass4PhaseNone;
+    surfaceState.bottomComp2OneShotCarryGeneration = 0;
+    surfaceState.presentedGeneration = 0;
+    surfaceState.topComposedCarryWriterGeneration = 0;
+    surfaceState.topComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingTopComposedCarryWritten = false;
+    surfaceState.pendingTopComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.bottomComposedCarryWriterGeneration = 0;
+    surfaceState.bottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingBottomComposedCarryWritten = false;
+    surfaceState.pendingBottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
     return true;
 }
 
@@ -920,6 +1066,24 @@ bool VulkanSurfacePresenter::configureSurface(int surfaceId, const VulkanSurface
     surfaceState.configured = true;
     surfaceState.vertexBufferDirty = true;
     surfaceState.backgroundDescriptorDirty = true;
+    surfaceState.bottomComp2OneShotCarryValid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Phase =
+        kBottomOneShotClass4PhaseNone;
+    surfaceState.bottomComp2OneShotCarryGeneration = 0;
+    surfaceState.presentedGeneration = 0;
+    surfaceState.topComposedCarryWriterGeneration = 0;
+    surfaceState.topComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingTopComposedCarryWritten = false;
+    surfaceState.pendingTopComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.bottomComposedCarryWriterGeneration = 0;
+    surfaceState.bottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingBottomComposedCarryWritten = false;
+    surfaceState.pendingBottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
 
     if (backgroundImage.pixels != nullptr && backgroundImage.width > 0 && backgroundImage.height > 0)
     {
@@ -991,22 +1155,93 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             return surfaceState.configured
                 && IsVulkanPostProcessFilter(surfaceState.config.filtering);
         });
-    const bool directPresentHasDualScreen3dSource =
+    const bool fastPathEnabled =
+        melonDS::UsesVulkanFastPath(inputs.pipelineProfile);
+    const bool compatibilityDirectPresentHasDualScreen3dSource =
         !hasDualScreenSurface
         || inputs.currentSourceHasHighres3d
         || inputs.capture3dSourceValid;
-    const bool directPresentHasReadyDualScreenHistory =
+    const bool compatibilityDirectPresentHasReadyDualScreenHistory =
         !hasDualScreenSurface
         || !inputs.capture3dSourceValid
         || (inputs.previousTopSourceValid && inputs.previousBottomSourceValid);
-    const bool directPresentRequested = !inputs.needsReadback
+    const bool compatibilityDirectPresentRequested =
+        !inputs.needsReadback
         && !inputs.validationMode
         && !postProcessFilterRequested
         && surfaces.size() == 1
         && hasRequiredDirectHandles
-        && directPresentHasDualScreen3dSource
-        && directPresentHasReadyDualScreenHistory
+        && compatibilityDirectPresentHasDualScreen3dSource
+        && compatibilityDirectPresentHasReadyDualScreenHistory
         && !inputs.capture3dSourceValid;
+    const bool topUsesLiveSource = inputs.liveSourceScreenSwap;
+    const bool bottomUsesLiveSource = !inputs.liveSourceScreenSwap;
+    const bool directPresentNeedsTopHistory =
+        inputs.directPresentTopCarryRequired
+        || (inputs.fastHighresOverlay2DTop && !topUsesLiveSource);
+    const bool directPresentNeedsBottomHistory =
+        inputs.directPresentBottomCarryRequired
+        || (inputs.fastHighresOverlay2DBottom && !bottomUsesLiveSource);
+    const bool directPresentHasReadyDualScreenHistory =
+        !hasDualScreenSurface
+        || !inputs.capture3dSourceValid
+        || ((!directPresentNeedsTopHistory || inputs.previousTopSourceValid)
+            && (!directPresentNeedsBottomHistory || inputs.previousBottomSourceValid));
+    if (fastPathEnabled)
+    {
+        for (auto& [surfaceId, surfaceState] : surfaces)
+        {
+            (void)surfaceId;
+            if (surfaceState.configured)
+            {
+                (void)ensureDirectCarryResources(
+                    surfaceState,
+                    inputs.scale,
+                    inputs.bottomAlternatingRegularComp2StoresOneShotCarry
+                        || inputs.class4BottomExactDisplayedOverlayProducer
+                        || inputs.class4BottomPostHandoffOneShotProducer
+                        || surfaceState.bottomComp2OneShotCarryValid);
+            }
+        }
+    }
+    const bool directPresentCanUseComposedCarry = std::all_of(
+        surfaces.begin(),
+        surfaces.end(),
+        [&](const auto& entry) {
+            const SurfaceState& surfaceState = entry.second;
+            return !surfaceState.configured
+                || directCarryReadyForInputs(surfaceState, inputs);
+        });
+    const bool directPresentNeedsHighresCarry =
+        inputs.directPresentTopCarryRequired
+        || inputs.directPresentBottomCarryRequired
+        || inputs.fastHighresOverlay2DTop
+        || inputs.fastHighresOverlay2DBottom;
+    const bool directPresentCanSkipComposedReplay =
+        !inputs.directPresentRequiresComposedFallback
+        || (!inputs.directPresentRequiresPackedFallback
+            && directPresentCanUseComposedCarry);
+    const bool directPresentHasSafeDualScreenCarry =
+        !hasDualScreenSurface
+        || !directPresentNeedsHighresCarry
+        || directPresentCanUseComposedCarry;
+    const bool directPresentCarrySupported =
+        !directPresentNeedsHighresCarry
+        || directPresentCanUseComposedCarry;
+    const bool fastPathDirectPresentRequested =
+        !inputs.needsReadback
+        && !inputs.validationMode
+        && !postProcessFilterRequested
+        && surfaces.size() == 1
+        && hasRequiredDirectHandles
+        && directPresentHasReadyDualScreenHistory
+        && directPresentHasSafeDualScreenCarry
+        && directPresentCanSkipComposedReplay
+        && !inputs.deferPresentationUntilHistoryReady
+        && directPresentCarrySupported;
+    const bool directPresentRequested = fastPathEnabled
+        ? fastPathDirectPresentRequested
+        : compatibilityDirectPresentRequested;
 
     if (!directPresentRequested)
     {
@@ -1016,14 +1251,55 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             fallbackReasonValidationMode++;
         if (!hasRequiredDirectHandles)
             fallbackReasonMissingHandles++;
-        if (surfaces.size() > 1 || !directPresentHasDualScreen3dSource || !directPresentHasReadyDualScreenHistory || inputs.capture3dSourceValid)
+        if (postProcessFilterRequested)
+            fallbackReasonPostProcessFilter++;
+        if (surfaces.size() != 1)
+            fallbackReasonSurfaceMultiplicity++;
+        if (!directPresentHasReadyDualScreenHistory)
+            fallbackReasonDualHistory++;
+        if (!directPresentHasSafeDualScreenCarry)
+            fallbackReasonUnsafeCarry++;
+        if (!directPresentCanSkipComposedReplay)
+            fallbackReasonComposedReplay++;
+        if (inputs.deferPresentationUntilHistoryReady)
+            fallbackReasonDeferredHistory++;
+        if (!directPresentCarrySupported)
+            fallbackReasonCarryUnsupported++;
+        if (inputs.directPresentRequiresPackedFallback)
+            fallbackReasonPackedFallback++;
+        if (inputs.directPresentRequiresComposedFallback)
+            fallbackReasonComposedFallback++;
+        if ((!fastPathEnabled
+                && (surfaces.size() > 1
+                    || !compatibilityDirectPresentHasDualScreen3dSource
+                    || !compatibilityDirectPresentHasReadyDualScreenHistory
+                    || inputs.capture3dSourceValid))
+            || (fastPathEnabled
+                && (surfaces.size() > 1
+                    || !directPresentHasReadyDualScreenHistory
+                    || !directPresentHasSafeDualScreenCarry
+                    || !directPresentCanSkipComposedReplay)))
+        {
             fallbackReasonSurfaceCount++;
+        }
     }
 
     VkImage frameImage = VK_NULL_HANDLE;
     VkImageView frameImageView = VK_NULL_HANDLE;
-    if (!directPresentRequested)
-    {
+    const bool visibleCompositeCandidate =
+        fastPathEnabled
+        && !directPresentRequested
+        && !inputs.needsReadback
+        && !inputs.validationMode
+        && !postProcessFilterRequested
+        && surfaces.size() == 1;
+    auto ensureFullFrameComposed = [&]() -> bool {
+        if (directPresentRequested)
+            return true;
+        if (frameImage != VK_NULL_HANDLE && frameImageView != VK_NULL_HANDLE)
+            return true;
+
+        const u64 composeSubmitStartNs = PerfNowNs();
         if (!output.composeAndSubmitFrame(frame, inputs))
         {
             composeSubmitFailures++;
@@ -1036,7 +1312,22 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         const u64 composeWaitTimeoutNs = highResolutionRealtimeFallbackPresent
             ? UINT64_MAX
             : timeoutNs;
-        if (!output.waitForFrame(frame, composeWaitTimeoutNs))
+        const u64 composeWaitStartNs = PerfNowNs();
+        const bool composeWaitOk = output.waitForFrame(frame, composeWaitTimeoutNs);
+        const u64 composeDoneNs = PerfNowNs();
+        if (composeDoneNs - composeSubmitStartNs > 200'000'000ull)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "VulkanPresenter[SlowPhase]: compose submitMs=%.1f waitMs=%.1f ok=%u timeoutNs=%llu frameId=%u",
+                static_cast<double>(composeWaitStartNs - composeSubmitStartNs) / 1e6,
+                static_cast<double>(composeDoneNs - composeWaitStartNs) / 1e6,
+                composeWaitOk ? 1u : 0u,
+                static_cast<unsigned long long>(composeWaitTimeoutNs),
+                frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u
+            );
+        }
+        if (!composeWaitOk)
         {
             composeWaitFailures++;
             return false;
@@ -1049,6 +1340,13 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             missingFrameImageFailures++;
             return false;
         }
+        return true;
+    };
+
+    if (!directPresentRequested && !visibleCompositeCandidate)
+    {
+        if (!ensureFullFrameComposed())
+            return false;
     }
 
     const u64 totalStartNs = PerfNowNs();
@@ -1071,13 +1369,48 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         sawConfiguredSurface = true;
 
         const bool directPresent = directPresentRequested;
+        bool visibleCompositePresent = false;
         VkImage sampledImage = directPresent ? inputs.sourceImage : frameImage;
         VkImageView sampledImageView = directPresent ? inputs.sourceImageView : frameImageView;
 
-        if (!ensureSwapchain(surfaceState))
+        const u64 ensureSwapchainStartNs = PerfNowNs();
+        const bool swapchainOk = ensureSwapchain(surfaceState, fastPathEnabled);
+        const u64 ensureSwapchainNs = PerfNowNs() - ensureSwapchainStartNs;
+        if (ensureSwapchainNs > 200'000'000ull)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "VulkanPresenter[SlowPhase]: ensureSwapchain waitMs=%.1f ok=%u frameId=%u",
+                static_cast<double>(ensureSwapchainNs) / 1e6,
+                swapchainOk ? 1u : 0u,
+                frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u
+            );
+        }
+        if (!swapchainOk)
         {
             swapchainUnavailableFrames++;
             continue;
+        }
+        if (fastPathEnabled)
+        {
+            const u64 carryStartNs = PerfNowNs();
+            (void)ensureDirectCarryResources(
+                surfaceState,
+                inputs.scale,
+                inputs.bottomAlternatingRegularComp2StoresOneShotCarry
+                    || inputs.class4BottomExactDisplayedOverlayProducer
+                    || inputs.class4BottomPostHandoffOneShotProducer
+                    || surfaceState.bottomComp2OneShotCarryValid);
+            const u64 carryNs = PerfNowNs() - carryStartNs;
+            if (carryNs > 200'000'000ull)
+            {
+                melonDS::Platform::Log(
+                    melonDS::Platform::LogLevel::Warn,
+                    "VulkanPresenter[SlowPhase]: ensureDirectCarryResources waitMs=%.1f frameId=%u",
+                    static_cast<double>(carryNs) / 1e6,
+                    frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u
+                );
+            }
         }
 
         const u64 remainingBudgetNs = [&]() -> u64 {
@@ -1091,8 +1424,32 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
                 return 0;
             return deadlineNs - nowNs;
         }();
+        VkResult waitResult = VK_SUCCESS;
+        if (!fastPathEnabled)
+        {
+            waitResult = waitForSurfaceIdle(surfaceState, remainingBudgetNs);
+        }
+        else
+        {
+            constexpr u64 kSurfaceIdleWaitCapNs = 500'000'000ull;
+            const u64 surfaceIdleBudgetNs = std::min(remainingBudgetNs, kSurfaceIdleWaitCapNs);
 
-        const VkResult waitResult = waitForSurfaceIdle(surfaceState, remainingBudgetNs);
+            const u64 surfaceIdleStartNs = PerfNowNs();
+            waitResult = waitForSurfaceIdle(surfaceState, surfaceIdleBudgetNs);
+            const u64 surfaceIdleWaitNs = PerfNowNs() - surfaceIdleStartNs;
+            if (surfaceIdleWaitNs > 200'000'000ull)
+            {
+                melonDS::Platform::Log(
+                    melonDS::Platform::LogLevel::Warn,
+                    "VulkanPresenter[SlowPhase]: surfaceIdle waitMs=%.1f result=%d budgetNs=%llu frameId=%u ready=%u",
+                    static_cast<double>(surfaceIdleWaitNs) / 1e6,
+                    static_cast<int>(waitResult),
+                    static_cast<unsigned long long>(surfaceIdleBudgetNs),
+                    frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u,
+                    output.isFrameReady(frame) ? 1u : 0u
+                );
+            }
+        }
         if (waitResult == VK_TIMEOUT)
         {
             skippedSurfaceWaits++;
@@ -1105,13 +1462,96 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             continue;
         }
 
+        const u64 visibleCompositeStartNs = PerfNowNs();
+        if (!directPresent && visibleCompositeCandidate && canUseVisibleComposite(surfaceState, inputs))
+        {
+            VulkanVisibleCompositorRegion regions[2]{};
+            const u32 regionCount = buildVisibleCompositeRegions(surfaceState, inputs, regions, 2);
+            if (regionCount > 0 && ensureVisibleCompositeResources(surfaceState))
+            {
+                const u32 currentIndex = surfaceState.visibleComposite.currentIndex;
+                const u32 previousIndex = currentIndex ^ 1u;
+                RetroArchImageResource& currentVisible = surfaceState.visibleComposite.images[currentIndex];
+                const RetroArchImageResource& previousVisible = surfaceState.visibleComposite.images[previousIndex];
+                const bool previousValid =
+                    surfaceState.visibleComposite.valid[previousIndex]
+                    && previousVisible.image != VK_NULL_HANDLE;
+                if (output.composeAndSubmitVisibleFrame(
+                        frame,
+                        inputs,
+                        currentVisible.image,
+                        currentVisible.imageView,
+                        currentVisible.layout,
+                        surfaceState.visibleComposite.valid[currentIndex],
+                        currentVisible.width,
+                        currentVisible.height,
+                        previousVisible.image,
+                        previousValid,
+                        regions,
+                        regionCount))
+                {
+                    currentVisible.layout = VK_IMAGE_LAYOUT_GENERAL;
+                    surfaceState.visibleComposite.valid[currentIndex] = true;
+                    surfaceState.visibleComposite.currentIndex = previousIndex;
+                    sampledImage = currentVisible.image;
+                    sampledImageView = currentVisible.imageView;
+                    visibleCompositePresent = true;
+                }
+                else
+                {
+                    composeSubmitFailures++;
+                }
+            }
+        }
+
+        const u64 visibleCompositeNs = PerfNowNs() - visibleCompositeStartNs;
+        if (visibleCompositeNs > 200'000'000ull)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "VulkanPresenter[SlowPhase]: visibleComposite waitMs=%.1f applied=%u frameId=%u",
+                static_cast<double>(visibleCompositeNs) / 1e6,
+                visibleCompositePresent ? 1u : 0u,
+                frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u
+            );
+        }
+
+        if (!directPresent && !visibleCompositePresent)
+        {
+            const u64 fullComposeStartNs = PerfNowNs();
+            const bool fullComposeOk = ensureFullFrameComposed();
+            const u64 fullComposeNs = PerfNowNs() - fullComposeStartNs;
+            if (fullComposeNs > 200'000'000ull)
+            {
+                melonDS::Platform::Log(
+                    melonDS::Platform::LogLevel::Warn,
+                    "VulkanPresenter[SlowPhase]: fullFrameCompose waitMs=%.1f ok=%u frameId=%u",
+                    static_cast<double>(fullComposeNs) / 1e6,
+                    fullComposeOk ? 1u : 0u,
+                    frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u
+                );
+            }
+            if (!fullComposeOk)
+                continue;
+            sampledImage = frameImage;
+            sampledImageView = frameImageView;
+        }
+
         bool retroArchApplied = false;
         VulkanFilterMode effectiveFiltering = surfaceState.config.filtering;
         if (surfaceState.config.filtering == VulkanFilterMode::RetroArch && !directPresent)
         {
             VkImage retroImage = VK_NULL_HANDLE;
             VkImageView retroImageView = VK_NULL_HANDLE;
-            if (runRetroArchFilter(surfaceState, sampledImage, sampledImageView, frame->width, frame->height, retroImage, retroImageView))
+            if (runRetroArchFilter(
+                    surfaceState,
+                    sampledImage,
+                    sampledImageView,
+                    frame->width,
+                    frame->height,
+                    inputs.pipelineProfile,
+                    retroImage,
+                    retroImageView))
             {
                 sampledImage = retroImage;
                 sampledImageView = retroImageView;
@@ -1139,8 +1579,10 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
                 surfaceState,
                 surfaceState.config,
                 surfaceState.background.imageView != VK_NULL_HANDLE ? &surfaceState.background : nullptr,
+                inputs,
                 directPresent,
                 retroArchApplied,
+                visibleCompositePresent,
                 drawCalls))
         {
             vertexUpdateFailures++;
@@ -1173,8 +1615,13 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
 
         if (acquireResult == VK_ERROR_OUT_OF_DATE_KHR)
         {
+            surfaceState.bottomComp2OneShotCarryValid = false;
+            surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+            surfaceState.bottomComp2OneShotCarryClass4Phase =
+                kBottomOneShotClass4PhaseNone;
+            surfaceState.bottomComp2OneShotCarryGeneration = 0;
             surfaceState.swapchainDirty = true;
-            if (!ensureSwapchain(surfaceState))
+            if (!ensureSwapchain(surfaceState, fastPathEnabled))
                 continue;
 
             acquireResult = vkAcquireNextImageKHR(
@@ -1201,8 +1648,135 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
             continue;
         }
 
+        const auto countDrawMode = [&](u32 drawMode) {
+            return static_cast<u32>(std::count_if(
+                drawCalls.begin(),
+                drawCalls.end(),
+                [&](const DrawCall& drawCall) {
+                    return drawCall.drawMode == drawMode;
+                }));
+        };
+        const bool bottomComp2OneShotResourceReady =
+            surfaceState.bottomComp2OneShotCarry.image != VK_NULL_HANDLE
+            && surfaceState.bottomComp2OneShotCarry.imageView != VK_NULL_HANDLE;
+        const bool bottomComp2OneShotStore =
+            directPresent
+            && bottomComp2OneShotResourceReady
+            && inputs.bottomAlternatingRegularComp2StoresOneShotCarry
+            && countDrawMode(kDrawModeDirectOverlay2DBottom) == 1u;
+        const bool bottomComp2OneShotConsume =
+            directPresent
+            && bottomComp2OneShotResourceReady
+            && surfaceState.bottomComp2OneShotCarryValid
+            && !surfaceState.bottomComp2OneShotCarryClass4Valid
+            && inputs.bottomAlternatingRegularComp2ConsumesOneShotCarry
+            && countDrawMode(kDrawModeDirectOverlay2DOnlyBottom) == 1u;
+        const u32 bottomClass4CompatibleDrawCount =
+            countDrawMode(kDrawModeDirectOverlay2DBottom)
+            + countDrawMode(kDrawModeDirectOverlay2DOnlyBottom)
+            + countDrawMode(kDrawModeDirectOverlay2DOnlyBottomPlane0)
+            + countDrawMode(kDrawModeDirectOverlay2DOnlyBottomPlane1);
+        const u32 bottomClass4ScreenDrawCount =
+            countDrawMode(kDrawModeBottomScreen)
+            + countDrawMode(kDrawModeFilteredCompositeBottom)
+            + countDrawMode(kDrawModeCompositeBottom)
+            + countDrawMode(kDrawModeDirectHighresBottom)
+            + countDrawMode(kDrawModeDirectHighresCarryBottom)
+            + bottomClass4CompatibleDrawCount;
+        const bool bottomClass4OneShotCarryResourceReady =
+            surfaceState.bottomComp2OneShotCarry.image != VK_NULL_HANDLE
+            && surfaceState.bottomComp2OneShotCarry.imageView != VK_NULL_HANDLE;
+        const bool bottomClass4OneShotOverlaySource =
+            directPresent
+            && bottomClass4OneShotCarryResourceReady
+            && !bottomComp2OneShotStore
+            && !bottomComp2OneShotConsume
+            && !surfaceState.bottomComp2OneShotCarryValid
+            && inputs.class4BottomExactDisplayedOverlayProducer
+            && bottomClass4ScreenDrawCount == 1u
+            && bottomClass4CompatibleDrawCount == 1u
+            && countDrawMode(kDrawModeDirectOverlay2DBottom) == 1u;
+        const bool bottomClass4OneShotOverlayBridge =
+            directPresent
+            && bottomClass4OneShotCarryResourceReady
+            && !bottomComp2OneShotStore
+            && !bottomComp2OneShotConsume
+            && surfaceState.bottomComp2OneShotCarryValid
+            && surfaceState.bottomComp2OneShotCarryClass4Valid
+            && surfaceState.bottomComp2OneShotCarryClass4Phase
+                == kBottomOneShotClass4PhaseSparseOverlay
+            && surfaceState.bottomComp2OneShotCarryGeneration
+                == surfaceState.presentedGeneration
+            && inputs.class4BottomNoAboveOverlayBridge
+            && bottomClass4ScreenDrawCount == 1u
+            && bottomClass4CompatibleDrawCount == 1u
+            && countDrawMode(kDrawModeDirectOverlay2DBottom) == 1u;
+        const bool bottomClass4OneShotCadenceOverlayBridge =
+            directPresent
+            && bottomClass4OneShotCarryResourceReady
+            && !bottomComp2OneShotStore
+            && !bottomComp2OneShotConsume
+            && surfaceState.bottomComp2OneShotCarryValid
+            && surfaceState.bottomComp2OneShotCarryClass4Valid
+            && surfaceState.bottomComp2OneShotCarryClass4Phase
+                == kBottomOneShotClass4PhaseSparseOverlay
+            && surfaceState.bottomComp2OneShotCarryGeneration
+                == surfaceState.presentedGeneration
+            && (inputs.class4BottomCadenceSuppressedOverlayBridge
+                || inputs.class4BottomCadencePresentedOverlayBridge)
+            && bottomClass4ScreenDrawCount == 1u
+            && bottomClass4CompatibleDrawCount == 1u
+            && countDrawMode(kDrawModeDirectOverlay2DBottom) == 1u;
+        const bool bottomClass4OneShotOverlayReplay =
+            bottomClass4OneShotOverlayBridge
+            || bottomClass4OneShotCadenceOverlayBridge;
+        const bool bottomClass4OneShotCarryWriter =
+            directPresent
+            && bottomClass4OneShotCarryResourceReady
+            && !bottomComp2OneShotStore
+            && !bottomComp2OneShotConsume
+            && inputs.class4BottomPostHandoffOneShotProducer
+            && bottomClass4ScreenDrawCount == 1u
+            && bottomClass4CompatibleDrawCount == 1u
+            && countDrawMode(kDrawModeDirectOverlay2DOnlyBottom) == 1u;
+        const bool bottomClass4OneShotOverlayMerge =
+            bottomClass4OneShotCarryWriter
+            && surfaceState.bottomComp2OneShotCarryValid
+            && surfaceState.bottomComp2OneShotCarryClass4Valid
+            && surfaceState.bottomComp2OneShotCarryClass4Phase
+                == kBottomOneShotClass4PhaseAfterNoAbove
+            && surfaceState.bottomComp2OneShotCarryGeneration
+                == surfaceState.presentedGeneration;
+        const bool bottomClass4OneShotCarryConsumer =
+            directPresent
+            && bottomClass4OneShotCarryResourceReady
+            && !bottomComp2OneShotStore
+            && !bottomComp2OneShotConsume
+            && surfaceState.bottomComp2OneShotCarryValid
+            && surfaceState.bottomComp2OneShotCarryClass4Valid
+            && surfaceState.bottomComp2OneShotCarryClass4Phase
+                == kBottomOneShotClass4PhaseResolved
+            && surfaceState.bottomComp2OneShotCarryGeneration
+                == surfaceState.presentedGeneration
+            && inputs.class4BottomFull2dOnlyOneShotConsumer
+            && bottomClass4ScreenDrawCount == 1u
+            && bottomClass4CompatibleDrawCount == 1u
+            && countDrawMode(kDrawModeDirectOverlay2DBottom) == 1u;
         const u64 recordStartNs = PerfNowNs();
-        if (!recordSurfaceCommands(surfaceState, surfaceState.framebuffers[imageIndex], inputs, sampledImage, directPresent, drawCalls))
+        if (!recordSurfaceCommands(
+                surfaceState,
+                surfaceState.framebuffers[imageIndex],
+                inputs,
+                sampledImage,
+                directPresent,
+                drawCalls,
+                bottomComp2OneShotStore,
+                bottomComp2OneShotConsume,
+                bottomClass4OneShotOverlaySource,
+                bottomClass4OneShotOverlayReplay,
+                bottomClass4OneShotOverlayMerge,
+                bottomClass4OneShotCarryWriter,
+                bottomClass4OneShotCarryConsumer))
         {
             recordFailures++;
             recoverSwapchain(surfaceState, "recordSurfaceCommands");
@@ -1213,7 +1787,122 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         const u64 submitStartNs = PerfNowNs();
         u64 surfacePresentCpuNs = 0;
         u64 surfacePresentTimelineValue = 0;
-        if (!submitSurfaceCommands(surfaceState, imageIndex, surfacePresentCpuNs, surfacePresentTimelineValue))
+        bool queueSubmitSucceeded = false;
+        bool presentAccepted = false;
+        const bool submitSucceeded = submitSurfaceCommands(
+            surfaceState,
+            imageIndex,
+            surfacePresentCpuNs,
+            surfacePresentTimelineValue,
+            queueSubmitSucceeded,
+            presentAccepted);
+        if (queueSubmitSucceeded
+            && (bottomComp2OneShotStore
+                || bottomComp2OneShotConsume
+                || bottomClass4OneShotOverlaySource
+                || bottomClass4OneShotCarryWriter
+                || bottomClass4OneShotCarryConsumer))
+        {
+            surfaceState.bottomComp2OneShotCarry.layout =
+                VK_IMAGE_LAYOUT_GENERAL;
+        }
+        if (queueSubmitSucceeded && !presentAccepted)
+        {
+            surfaceState.bottomComp2OneShotCarryValid = false;
+            surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+            surfaceState.bottomComp2OneShotCarryClass4Phase =
+                kBottomOneShotClass4PhaseNone;
+            surfaceState.bottomComp2OneShotCarryGeneration = 0;
+        }
+        if (queueSubmitSucceeded && presentAccepted)
+        {
+            surfaceState.presentedGeneration++;
+            if (bottomComp2OneShotStore)
+            {
+                surfaceState.bottomComp2OneShotCarryValid = true;
+                surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+                surfaceState.bottomComp2OneShotCarryClass4Phase =
+                    kBottomOneShotClass4PhaseNone;
+                surfaceState.bottomComp2OneShotCarryGeneration = 0;
+            }
+            else if (bottomClass4OneShotOverlaySource)
+            {
+                surfaceState.bottomComp2OneShotCarryValid = true;
+                surfaceState.bottomComp2OneShotCarryClass4Valid = true;
+                surfaceState.bottomComp2OneShotCarryClass4Phase =
+                    kBottomOneShotClass4PhaseSparseOverlay;
+                surfaceState.bottomComp2OneShotCarryGeneration =
+                    surfaceState.presentedGeneration;
+            }
+            else if (bottomClass4OneShotOverlayBridge)
+            {
+                surfaceState.bottomComp2OneShotCarryValid = true;
+                surfaceState.bottomComp2OneShotCarryClass4Valid = true;
+                surfaceState.bottomComp2OneShotCarryClass4Phase =
+                    kBottomOneShotClass4PhaseAfterNoAbove;
+                surfaceState.bottomComp2OneShotCarryGeneration =
+                    surfaceState.presentedGeneration;
+            }
+            else if (bottomClass4OneShotCarryWriter)
+            {
+                surfaceState.bottomComp2OneShotCarryValid = true;
+                surfaceState.bottomComp2OneShotCarryClass4Valid = true;
+                surfaceState.bottomComp2OneShotCarryClass4Phase =
+                    kBottomOneShotClass4PhaseResolved;
+                surfaceState.bottomComp2OneShotCarryGeneration =
+                    surfaceState.presentedGeneration;
+            }
+            else
+            {
+                surfaceState.bottomComp2OneShotCarryValid = false;
+                surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+                surfaceState.bottomComp2OneShotCarryClass4Phase =
+                    kBottomOneShotClass4PhaseNone;
+                surfaceState.bottomComp2OneShotCarryGeneration = 0;
+            }
+            if (surfaceState.pendingTopComposedCarryWritten)
+            {
+                surfaceState.topComposedCarryWriterGeneration =
+                    surfaceState.presentedGeneration;
+                surfaceState.topComposedCarryWriterPhase =
+                    surfaceState.pendingTopComposedCarryWriterPhase;
+            }
+            else
+            {
+                surfaceState.topComposedCarryWriterGeneration = 0;
+                surfaceState.topComposedCarryWriterPhase =
+                    kComposedCarryWriterPhaseNone;
+            }
+            if (surfaceState.pendingBottomComposedCarryWritten)
+            {
+                surfaceState.bottomComposedCarryWriterGeneration =
+                    surfaceState.presentedGeneration;
+                surfaceState.bottomComposedCarryWriterPhase =
+                    surfaceState.pendingBottomComposedCarryWriterPhase;
+            }
+            else
+            {
+                surfaceState.bottomComposedCarryWriterGeneration = 0;
+                surfaceState.bottomComposedCarryWriterPhase =
+                    kComposedCarryWriterPhaseNone;
+            }
+        }
+        else if (queueSubmitSucceeded
+            && surfaceState.pendingTopComposedCarryWritten)
+        {
+            surfaceState.topComposedCarryWriterGeneration = 0;
+            surfaceState.topComposedCarryWriterPhase =
+                kComposedCarryWriterPhaseNone;
+        }
+        if (queueSubmitSucceeded
+            && !presentAccepted
+            && surfaceState.pendingBottomComposedCarryWritten)
+        {
+            surfaceState.bottomComposedCarryWriterGeneration = 0;
+            surfaceState.bottomComposedCarryWriterPhase =
+                kComposedCarryWriterPhaseNone;
+        }
+        if (!submitSucceeded)
         {
             submitFailures++;
             recoverSwapchain(surfaceState, "submitSurfaceCommands");
@@ -1230,7 +1919,9 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         if (directPresent)
             directPresentedFrames++;
         else
+        {
             fallbackPresentedFrames++;
+        }
     }
 
     if (presentedAnySurface)
@@ -1242,7 +1933,23 @@ bool VulkanSurfacePresenter::presentFrame(Frame* frame, VulkanOutput& output, co
         recordCpuWindow.Add(recordCpuNs);
         submitCpuWindow.Add(submitCpuNs);
         presentCpuWindow.Add(presentCpuNs);
-        frameWallCpuWindow.Add(PerfNowNs() - totalStartNs);
+        const u64 wallNs = PerfNowNs() - totalStartNs;
+        if (wallNs > 200'000'000ull)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "VulkanPresenter[SlowPhase]: wallMs=%.1f descMs=%.1f vertexMs=%.1f acquireMs=%.1f recordMs=%.1f submitMs=%.1f presentMs=%.1f frameId=%u",
+                static_cast<double>(wallNs) / 1e6,
+                static_cast<double>(descriptorCpuNs) / 1e6,
+                static_cast<double>(vertexCpuNs) / 1e6,
+                static_cast<double>(acquireCpuNs) / 1e6,
+                static_cast<double>(recordCpuNs) / 1e6,
+                static_cast<double>(submitCpuNs) / 1e6,
+                static_cast<double>(presentCpuNs) / 1e6,
+                frame != nullptr ? static_cast<unsigned>(frame->frameId) : 0u
+            );
+        }
+        frameWallCpuWindow.Add(wallNs);
         presentedFrames++;
         logPerformanceIfNeeded();
     }
@@ -1333,6 +2040,26 @@ void VulkanSurfacePresenter::invalidateDescriptorCaches()
         surfaceState.screenDescriptorCache = {};
         surfaceState.backgroundDescriptorCache = {};
         surfaceState.backgroundDescriptorDirty = true;
+        surfaceState.visibleComposite.valid[0] = false;
+        surfaceState.visibleComposite.valid[1] = false;
+        surfaceState.bottomComp2OneShotCarryValid = false;
+        surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+        surfaceState.bottomComp2OneShotCarryClass4Phase =
+            kBottomOneShotClass4PhaseNone;
+        surfaceState.bottomComp2OneShotCarryGeneration = 0;
+        surfaceState.presentedGeneration = 0;
+        surfaceState.topComposedCarryWriterGeneration = 0;
+        surfaceState.topComposedCarryWriterPhase =
+            kComposedCarryWriterPhaseNone;
+        surfaceState.pendingTopComposedCarryWritten = false;
+        surfaceState.pendingTopComposedCarryWriterPhase =
+            kComposedCarryWriterPhaseNone;
+        surfaceState.bottomComposedCarryWriterGeneration = 0;
+        surfaceState.bottomComposedCarryWriterPhase =
+            kComposedCarryWriterPhaseNone;
+        surfaceState.pendingBottomComposedCarryWritten = false;
+        surfaceState.pendingBottomComposedCarryWriterPhase =
+            kComposedCarryWriterPhaseNone;
     }
 }
 
@@ -1419,6 +2146,8 @@ void VulkanSurfacePresenter::destroySurfaceStateResources(SurfaceState& surfaceS
 {
     destroyRetroArchResources(surfaceState);
     destroyBackgroundTexture(surfaceState);
+    destroyVisibleCompositeResources(surfaceState);
+    destroyDirectCarryResources(surfaceState);
     destroySwapchain(surfaceState);
     destroyInFlightFence(surfaceState);
 
@@ -1456,17 +2185,323 @@ void VulkanSurfacePresenter::destroySurfaceStateResources(SurfaceState& surfaceS
         ANativeWindow_release(surfaceState.window);
 }
 
-bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
+bool VulkanSurfacePresenter::ensureDirectCarryResources(
+    SurfaceState& surfaceState,
+    u32 scale,
+    bool ensureBottomComp2OneShot)
+{
+    (void)scale;
+    if (!surfaceState.configured)
+        return false;
+
+    if (surfaceState.extent.width == 0 || surfaceState.extent.height == 0)
+        return false;
+
+    const u32 carryWidth = surfaceState.extent.width;
+    const u32 carryHeight = surfaceState.extent.height;
+
+    auto ensureOne = [&](RetroArchImageResource& resource, bool& valid) -> bool {
+        if (resource.image != VK_NULL_HANDLE
+            && resource.imageView != VK_NULL_HANDLE
+            && resource.width == carryWidth
+            && resource.height == carryHeight)
+        {
+            return true;
+        }
+
+        destroyRetroArchImage(resource);
+        valid = false;
+
+        VkImageCreateInfo imageInfo{};
+        imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        imageInfo.imageType = VK_IMAGE_TYPE_2D;
+        imageInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        imageInfo.extent = {carryWidth, carryHeight, 1};
+        imageInfo.mipLevels = 1;
+        imageInfo.arrayLayers = 1;
+        imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+        imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+        imageInfo.usage = VK_IMAGE_USAGE_STORAGE_BIT;
+        imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        if (vkCreateImage(device, &imageInfo, nullptr, &resource.image) != VK_SUCCESS)
+            return false;
+
+        VkMemoryRequirements memoryRequirements{};
+        vkGetImageMemoryRequirements(device, resource.image, &memoryRequirements);
+
+        VkMemoryAllocateInfo memoryInfo{};
+        memoryInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        memoryInfo.allocationSize = memoryRequirements.size;
+        memoryInfo.memoryTypeIndex = findMemoryType(memoryRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+        if (memoryInfo.memoryTypeIndex == UINT32_MAX
+            || vkAllocateMemory(device, &memoryInfo, nullptr, &resource.memory) != VK_SUCCESS
+            || vkBindImageMemory(device, resource.image, resource.memory, 0) != VK_SUCCESS)
+        {
+            destroyRetroArchImage(resource);
+            return false;
+        }
+
+        VkImageViewCreateInfo viewInfo{};
+        viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+        viewInfo.image = resource.image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = VK_FORMAT_R8G8B8A8_UNORM;
+        viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        viewInfo.subresourceRange.levelCount = 1;
+        viewInfo.subresourceRange.layerCount = 1;
+        if (vkCreateImageView(device, &viewInfo, nullptr, &resource.imageView) != VK_SUCCESS)
+        {
+            destroyRetroArchImage(resource);
+            return false;
+        }
+
+        resource.width = carryWidth;
+        resource.height = carryHeight;
+        resource.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        surfaceState.screenDescriptorCache.ready = false;
+        surfaceState.backgroundDescriptorCache.ready = false;
+        return true;
+    };
+
+    if (!ensureOne(surfaceState.topComposedCarry, surfaceState.topComposedCarryValid)
+        || !ensureOne(surfaceState.bottomComposedCarry, surfaceState.bottomComposedCarryValid))
+    {
+        return false;
+    }
+
+    if (!ensureBottomComp2OneShot)
+        return true;
+
+    const VkImage previousOneShotImage =
+        surfaceState.bottomComp2OneShotCarry.image;
+    if (!ensureOne(
+            surfaceState.bottomComp2OneShotCarry,
+            surfaceState.bottomComp2OneShotCarryValid))
+    {
+        return false;
+    }
+    if (surfaceState.bottomComp2OneShotCarry.image != previousOneShotImage)
+    {
+        surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+        surfaceState.bottomComp2OneShotCarryClass4Phase =
+            kBottomOneShotClass4PhaseNone;
+        surfaceState.bottomComp2OneShotCarryGeneration = 0;
+    }
+    return true;
+}
+
+void VulkanSurfacePresenter::destroyDirectCarryResources(SurfaceState& surfaceState)
+{
+    destroyRetroArchImage(surfaceState.topComposedCarry);
+    destroyRetroArchImage(surfaceState.bottomComposedCarry);
+    destroyRetroArchImage(surfaceState.bottomComp2OneShotCarry);
+    surfaceState.topComposedCarryValid = false;
+    surfaceState.bottomComposedCarryValid = false;
+    surfaceState.bottomComp2OneShotCarryValid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Phase =
+        kBottomOneShotClass4PhaseNone;
+    surfaceState.bottomComp2OneShotCarryGeneration = 0;
+    surfaceState.presentedGeneration = 0;
+    surfaceState.topComposedCarryWriterGeneration = 0;
+    surfaceState.topComposedCarryWriterPhase = kComposedCarryWriterPhaseNone;
+    surfaceState.pendingTopComposedCarryWritten = false;
+    surfaceState.pendingTopComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.bottomComposedCarryWriterGeneration = 0;
+    surfaceState.bottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingBottomComposedCarryWritten = false;
+    surfaceState.pendingBottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.screenDescriptorCache.topComposedCarryImageView = VK_NULL_HANDLE;
+    surfaceState.screenDescriptorCache.bottomComposedCarryImageView = VK_NULL_HANDLE;
+    surfaceState.screenDescriptorCache.bottomComp2OneShotCarryImageView = VK_NULL_HANDLE;
+    surfaceState.backgroundDescriptorCache.topComposedCarryImageView = VK_NULL_HANDLE;
+    surfaceState.backgroundDescriptorCache.bottomComposedCarryImageView = VK_NULL_HANDLE;
+    surfaceState.backgroundDescriptorCache.bottomComp2OneShotCarryImageView = VK_NULL_HANDLE;
+}
+
+bool VulkanSurfacePresenter::ensureVisibleCompositeResources(SurfaceState& surfaceState)
+{
+    if (!surfaceState.configured || surfaceState.extent.width == 0 || surfaceState.extent.height == 0)
+        return false;
+
+    for (u32 i = 0; i < surfaceState.visibleComposite.images.size(); i++)
+    {
+        RetroArchImageResource& image = surfaceState.visibleComposite.images[i];
+        if (image.image != VK_NULL_HANDLE
+            && image.imageView != VK_NULL_HANDLE
+            && image.width == surfaceState.extent.width
+            && image.height == surfaceState.extent.height)
+        {
+            continue;
+        }
+
+        destroyRetroArchImage(image);
+        surfaceState.visibleComposite.valid[i] = false;
+        if (!createRetroArchImage(
+                image,
+                surfaceState.extent.width,
+                surfaceState.extent.height,
+                melonDS::VulkanPipelineProfile::FastPath))
+            return false;
+    }
+
+    return true;
+}
+
+void VulkanSurfacePresenter::destroyVisibleCompositeResources(SurfaceState& surfaceState)
+{
+    for (RetroArchImageResource& image : surfaceState.visibleComposite.images)
+        destroyRetroArchImage(image);
+    surfaceState.visibleComposite.currentIndex = 0;
+    surfaceState.visibleComposite.valid[0] = false;
+    surfaceState.visibleComposite.valid[1] = false;
+}
+
+bool VulkanSurfacePresenter::canUseVisibleComposite(const SurfaceState& surfaceState, const VulkanCompositionInputs& inputs) const
+{
+    if (!surfaceState.configured || surfaceState.extent.width == 0 || surfaceState.extent.height == 0)
+        return false;
+    if (surfaceState.background.imageView != VK_NULL_HANDLE
+        || surfaceState.config.retroShaderEnabled
+        || IsVulkanPostProcessFilter(surfaceState.config.filtering))
+    {
+        return false;
+    }
+    if (surfaceState.config.hybridTopScreen.enabled || surfaceState.config.hybridBottomScreen.enabled)
+        return false;
+    if (surfaceState.config.topAlpha != 1.0f || surfaceState.config.bottomAlpha != 1.0f)
+        return false;
+
+    const auto rectUsable = [&](const VulkanPresenterRect& rect) {
+        if (!rect.enabled)
+            return true;
+        if (rect.width <= 0 || rect.height <= 0 || rect.x < 0 || rect.y < 0)
+            return false;
+        return static_cast<u32>(rect.x + rect.width) <= surfaceState.extent.width
+            && static_cast<u32>(rect.y + rect.height) <= surfaceState.extent.height;
+    };
+    if (!rectUsable(surfaceState.config.topScreen) || !rectUsable(surfaceState.config.bottomScreen))
+        return false;
+    if (!surfaceState.config.topScreen.enabled && !surfaceState.config.bottomScreen.enabled)
+        return false;
+
+    const u32 previousIndex = surfaceState.visibleComposite.currentIndex ^ 1u;
+    const bool previousVisibleValid =
+        previousIndex < surfaceState.visibleComposite.images.size()
+        && surfaceState.visibleComposite.valid[previousIndex]
+        && surfaceState.visibleComposite.images[previousIndex].image != VK_NULL_HANDLE;
+    if ((inputs.replayTopComposedFromPrevious && surfaceState.config.topScreen.enabled)
+        || (inputs.replayBottomComposedFromPrevious && surfaceState.config.bottomScreen.enabled))
+    {
+        return previousVisibleValid;
+    }
+
+    return true;
+}
+
+u32 VulkanSurfacePresenter::buildVisibleCompositeRegions(
+    const SurfaceState& surfaceState,
+    const VulkanCompositionInputs& inputs,
+    VulkanVisibleCompositorRegion* regions,
+    u32 maxRegionCount) const
+{
+    if (regions == nullptr || maxRegionCount == 0)
+        return 0;
+
+    u32 count = 0;
+    const auto appendRegion = [&](const VulkanPresenterRect& rect, bool topScreen, bool copyFromPrevious) {
+        if (!rect.enabled || rect.width <= 0 || rect.height <= 0 || count >= maxRegionCount)
+            return;
+        regions[count++] = VulkanVisibleCompositorRegion{
+            .enabled = true,
+            .topScreen = topScreen,
+            .copyFromPrevious = copyFromPrevious,
+            .x = static_cast<u32>(rect.x),
+            .y = static_cast<u32>(rect.y),
+            .width = static_cast<u32>(rect.width),
+            .height = static_cast<u32>(rect.height),
+        };
+    };
+
+    if (surfaceState.config.bottomOnTop)
+    {
+        appendRegion(surfaceState.config.topScreen, true, inputs.replayTopComposedFromPrevious);
+        appendRegion(surfaceState.config.bottomScreen, false, inputs.replayBottomComposedFromPrevious);
+    }
+    else
+    {
+        appendRegion(surfaceState.config.bottomScreen, false, inputs.replayBottomComposedFromPrevious);
+        appendRegion(surfaceState.config.topScreen, true, inputs.replayTopComposedFromPrevious);
+    }
+    return count;
+}
+
+bool VulkanSurfacePresenter::directCarryReadyForInputs(const SurfaceState& surfaceState, const VulkanCompositionInputs& inputs) const
+{
+    if (!inputs.directPresentTopComposedCarryRequired && !inputs.directPresentBottomComposedCarryRequired)
+        return true;
+
+    if (inputs.directPresentTopComposedCarryRequired
+        && (!surfaceState.topComposedCarryValid
+            || surfaceState.topComposedCarry.imageView == VK_NULL_HANDLE))
+    {
+        return false;
+    }
+
+    if (inputs.directPresentBottomComposedCarryRequired
+        && (!surfaceState.bottomComposedCarryValid
+            || surfaceState.bottomComposedCarry.imageView == VK_NULL_HANDLE))
+    {
+        return false;
+    }
+
+    return true;
+}
+
+bool VulkanSurfacePresenter::ensureSwapchain(
+    SurfaceState& surfaceState,
+    bool fastPathProfile)
 {
     if (!surfaceState.swapchainDirty && surfaceState.swapchain != VK_NULL_HANDLE)
         return true;
 
-    if (surfaceState.swapchain != VK_NULL_HANDLE && waitForSurfaceIdle(surfaceState) != VK_SUCCESS)
-        return false;
+    const u64 ensureStartNs = PerfNowNs();
+    const auto logSlowSegment = [&](const char* segment, u64 segmentStartNs) {
+        const u64 nowNs = PerfNowNs();
+        if (nowNs - segmentStartNs > 200'000'000ull)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "VulkanPresenter[SlowPhase]: ensureSwapchain.%s waitMs=%.1f surface=%d hadSwapchain=%u",
+                segment,
+                static_cast<double>(nowNs - segmentStartNs) / 1e6,
+                surfaceState.id,
+                surfaceState.swapchain != VK_NULL_HANDLE ? 1u : 0u
+            );
+        }
+    };
 
+    if (surfaceState.swapchain != VK_NULL_HANDLE)
+    {
+        const u64 idleStartNs = PerfNowNs();
+        const VkResult idleResult = waitForSurfaceIdle(surfaceState);
+        logSlowSegment("idleWait", idleStartNs);
+        if (idleResult != VK_SUCCESS)
+            return false;
+    }
+
+    const u64 queryStartNs = PerfNowNs();
     VkSurfaceCapabilitiesKHR capabilities{};
     if (vkGetPhysicalDeviceSurfaceCapabilitiesKHR(physicalDevice, surfaceState.surface, &capabilities) != VK_SUCCESS)
+    {
+        logSlowSegment("capsQuery", queryStartNs);
         return false;
+    }
 
     u32 formatCount = 0;
     if (vkGetPhysicalDeviceSurfaceFormatsKHR(physicalDevice, surfaceState.surface, &formatCount, nullptr) != VK_SUCCESS
@@ -1486,8 +2521,10 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     if (vkGetPhysicalDeviceSurfacePresentModesKHR(physicalDevice, surfaceState.surface, &presentModeCount, presentModes.data()) != VK_SUCCESS)
         return false;
 
+    logSlowSegment("surfaceQueries", queryStartNs);
     std::vector<VkSurfaceFormatKHR> rankedFormats = rankSurfaceFormats(formats);
     std::vector<VkPresentModeKHR> rankedPresentModes = rankPresentModes(presentModes);
+    const u64 createLoopStartNs = PerfNowNs();
 
     u32 width = surfaceState.requestedWidth > 0 ? surfaceState.requestedWidth : static_cast<u32>(std::max(1, ANativeWindow_getWidth(surfaceState.window)));
     u32 height = surfaceState.requestedHeight > 0 ? surfaceState.requestedHeight : static_cast<u32>(std::max(1, ANativeWindow_getHeight(surfaceState.window)));
@@ -1503,7 +2540,51 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
         extent.height = std::clamp(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height);
     }
 
-    destroySwapchain(surfaceState);
+    VkSwapchainKHR retiredSwapchain = VK_NULL_HANDLE;
+    if (!fastPathProfile)
+    {
+        destroySwapchain(surfaceState);
+    }
+    else
+    {
+        retiredSwapchain = surfaceState.swapchain;
+        for (VkFramebuffer framebuffer : surfaceState.framebuffers)
+        {
+            if (framebuffer != VK_NULL_HANDLE)
+                vkDestroyFramebuffer(device, framebuffer, nullptr);
+        }
+        surfaceState.framebuffers.clear();
+        for (VkImageView imageView : surfaceState.swapchainImageViews)
+        {
+            if (imageView != VK_NULL_HANDLE)
+                vkDestroyImageView(device, imageView, nullptr);
+        }
+        surfaceState.swapchainImageViews.clear();
+        surfaceState.swapchainImages.clear();
+        if (surfaceState.pipeline != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(device, surfaceState.pipeline, nullptr);
+            surfaceState.pipeline = VK_NULL_HANDLE;
+        }
+        if (surfaceState.compatibilityPipeline != VK_NULL_HANDLE)
+        {
+            vkDestroyPipeline(device, surfaceState.compatibilityPipeline, nullptr);
+            surfaceState.compatibilityPipeline = VK_NULL_HANDLE;
+        }
+        if (surfaceState.renderPass != VK_NULL_HANDLE)
+        {
+            vkDestroyRenderPass(device, surfaceState.renderPass, nullptr);
+            surfaceState.renderPass = VK_NULL_HANDLE;
+        }
+        surfaceState.swapchain = VK_NULL_HANDLE;
+    }
+    const auto destroyRetiredSwapchain = [&]() {
+        if (retiredSwapchain != VK_NULL_HANDLE)
+        {
+            vkDestroySwapchainKHR(device, retiredSwapchain, nullptr);
+            retiredSwapchain = VK_NULL_HANDLE;
+        }
+    };
 
     if (surfaceState.hasCachedSwapchainSelection)
     {
@@ -1598,9 +2679,10 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             swapchainInfo.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
             swapchainInfo.presentMode = candidatePresentMode;
             swapchainInfo.clipped = VK_TRUE;
-            swapchainInfo.oldSwapchain = VK_NULL_HANDLE;
+            swapchainInfo.oldSwapchain = retiredSwapchain;
 
             const VkResult swapchainResult = vkCreateSwapchainKHR(device, &swapchainInfo, nullptr, &surfaceState.swapchain);
+            destroyRetiredSwapchain();
             if (swapchainResult == VK_SUCCESS)
             {
                 surfaceFormat = candidateFormat;
@@ -1628,8 +2710,12 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
             break;
     }
 
+    logSlowSegment("createLoop", createLoopStartNs);
+    destroyRetiredSwapchain();
     if (!swapchainCreated)
         return false;
+    const u64 postCreateStartNs = PerfNowNs();
+    (void)ensureStartNs;
 
     VkAttachmentDescription attachmentDescription{};
     attachmentDescription.format = surfaceFormat.format;
@@ -1743,7 +2829,9 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     shaderStages[0].pName = "main";
     shaderStages[1].sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
     shaderStages[1].stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-    shaderStages[1].module = fragmentShaderModule;
+    shaderStages[1].module = fastPathProfile
+        ? fragmentShaderModule
+        : compatibilityFragmentShaderModule;
     shaderStages[1].pName = "main";
 
     VkVertexInputBindingDescription bindingDescription{};
@@ -1832,16 +2920,39 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     pipelineInfo.renderPass = surfaceState.renderPass;
     pipelineInfo.subpass = 0;
 
+    if (fastPathProfile)
+        ensureSurfacePipelineCache();
+    const u64 pipelineCreateStartNs = fastPathProfile ? PerfNowNs() : 0;
+    VkPipeline& selectedPipeline = fastPathProfile
+        ? surfaceState.pipeline
+        : surfaceState.compatibilityPipeline;
     const VkResult createPipelineResult = vkCreateGraphicsPipelines(
         device,
-        VK_NULL_HANDLE,
+        fastPathProfile ? surfacePipelineCache : VK_NULL_HANDLE,
         1,
         &pipelineInfo,
         nullptr,
-        &surfaceState.pipeline
+        &selectedPipeline
     );
+    u64 pipelineCreateNs = 0;
+    if (fastPathProfile)
+    {
+        pipelineCreateNs = PerfNowNs() - pipelineCreateStartNs;
+        if (pipelineCreateNs > 200'000'000ull)
+        {
+            melonDS::Platform::Log(
+                melonDS::Platform::LogLevel::Warn,
+                "VulkanPresenter[SlowPhase]: createGraphicsPipeline waitMs=%.1f surface=%d",
+                static_cast<double>(pipelineCreateNs) / 1e6,
+                surfaceState.id
+            );
+        }
+    }
     if (createPipelineResult != VK_SUCCESS)
         return failSwapchainConfig("vkCreateGraphicsPipelines", createPipelineResult);
+
+    if (fastPathProfile && pipelineCreateNs > 200'000'000ull)
+        saveSurfacePipelineCache();
 
     for (u32 i = 0; i < swapchainImageCount; i++)
     {
@@ -1877,6 +2988,7 @@ bool VulkanSurfacePresenter::ensureSwapchain(SurfaceState& surfaceState)
     surfaceState.swapchainDirty = false;
     if (extentChanged)
         surfaceState.vertexBufferDirty = true;
+    logSlowSegment("postCreate", postCreateStartNs);
     return true;
 }
 
@@ -1901,6 +3013,12 @@ void VulkanSurfacePresenter::destroySwapchain(SurfaceState& surfaceState)
     {
         vkDestroyPipeline(device, surfaceState.pipeline, nullptr);
         surfaceState.pipeline = VK_NULL_HANDLE;
+    }
+
+    if (surfaceState.compatibilityPipeline != VK_NULL_HANDLE)
+    {
+        vkDestroyPipeline(device, surfaceState.compatibilityPipeline, nullptr);
+        surfaceState.compatibilityPipeline = VK_NULL_HANDLE;
     }
 
     if (surfaceState.renderPass != VK_NULL_HANDLE)
@@ -1928,8 +3046,125 @@ void VulkanSurfacePresenter::recoverSwapchain(SurfaceState& surfaceState, const 
 
     (void)waitForSurfaceIdle(surfaceState);
 
+    surfaceState.bottomComp2OneShotCarryValid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Valid = false;
+    surfaceState.bottomComp2OneShotCarryClass4Phase =
+        kBottomOneShotClass4PhaseNone;
+    surfaceState.bottomComp2OneShotCarryGeneration = 0;
+    surfaceState.presentedGeneration = 0;
+    surfaceState.topComposedCarryWriterGeneration = 0;
+    surfaceState.topComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingTopComposedCarryWritten = false;
+    surfaceState.pendingTopComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.bottomComposedCarryWriterGeneration = 0;
+    surfaceState.bottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingBottomComposedCarryWritten = false;
+    surfaceState.pendingBottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
     destroySwapchain(surfaceState);
     surfaceState.swapchainDirty = true;
+}
+
+void VulkanSurfacePresenter::ensureSurfacePipelineCache()
+{
+    if (surfacePipelineCache != VK_NULL_HANDLE || device == VK_NULL_HANDLE)
+        return;
+
+    VkPhysicalDeviceProperties deviceProperties{};
+    vkGetPhysicalDeviceProperties(physicalDevice, &deviceProperties);
+    char cacheFileName[192]{};
+    std::snprintf(
+        cacheFileName,
+        sizeof(cacheFileName),
+        "vulkan_presenter_pipeline_cache_v1_%08x_%08x_%08x.bin",
+        deviceProperties.vendorID,
+        deviceProperties.deviceID,
+        deviceProperties.driverVersion
+    );
+    surfacePipelineCacheFile = cacheFileName;
+
+    std::vector<u8> cacheData;
+    if (melonDS::Platform::FileHandle* cacheFile =
+            melonDS::Platform::OpenLocalFile(surfacePipelineCacheFile, melonDS::Platform::FileMode::Read))
+    {
+        const u64 cacheSize = melonDS::Platform::FileLength(cacheFile);
+        if (cacheSize > 0 && cacheSize <= (64ull * 1024ull * 1024ull))
+        {
+            cacheData.resize(static_cast<size_t>(cacheSize));
+            if (melonDS::Platform::FileRead(cacheData.data(), 1, cacheSize, cacheFile) != cacheSize)
+                cacheData.clear();
+        }
+        melonDS::Platform::CloseFile(cacheFile);
+    }
+
+    VkPipelineCacheCreateInfo cacheCreateInfo{};
+    cacheCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO;
+    cacheCreateInfo.initialDataSize = cacheData.size();
+    cacheCreateInfo.pInitialData = cacheData.empty() ? nullptr : cacheData.data();
+    VkResult cacheResult = vkCreatePipelineCache(device, &cacheCreateInfo, nullptr, &surfacePipelineCache);
+    if (cacheResult != VK_SUCCESS && !cacheData.empty())
+    {
+        cacheCreateInfo.initialDataSize = 0;
+        cacheCreateInfo.pInitialData = nullptr;
+        cacheResult = vkCreatePipelineCache(device, &cacheCreateInfo, nullptr, &surfacePipelineCache);
+    }
+    if (cacheResult != VK_SUCCESS)
+    {
+        surfacePipelineCache = VK_NULL_HANDLE;
+        return;
+    }
+
+    melonDS::Platform::Log(
+        melonDS::Platform::LogLevel::Warn,
+        "VulkanSurfacePresenter: pipeline cache ready (%s, %llu bytes preloaded)",
+        surfacePipelineCacheFile.c_str(),
+        static_cast<unsigned long long>(cacheData.size())
+    );
+}
+
+void VulkanSurfacePresenter::saveSurfacePipelineCache()
+{
+    if (device == VK_NULL_HANDLE || surfacePipelineCache == VK_NULL_HANDLE || surfacePipelineCacheFile.empty())
+        return;
+
+    size_t cacheSize = 0;
+    if (vkGetPipelineCacheData(device, surfacePipelineCache, &cacheSize, nullptr) != VK_SUCCESS || cacheSize == 0)
+        return;
+
+    std::vector<u8> cacheData(cacheSize);
+    if (vkGetPipelineCacheData(device, surfacePipelineCache, &cacheSize, cacheData.data()) != VK_SUCCESS || cacheSize == 0)
+        return;
+
+    melonDS::Platform::FileHandle* cacheFile =
+        melonDS::Platform::OpenLocalFile(surfacePipelineCacheFile, melonDS::Platform::FileMode::ReadWrite);
+    if (cacheFile == nullptr)
+        return;
+
+    const u64 written = melonDS::Platform::FileWrite(cacheData.data(), 1, cacheSize, cacheFile);
+    melonDS::Platform::FileFlush(cacheFile);
+    melonDS::Platform::CloseFile(cacheFile);
+    if (written == cacheSize)
+    {
+        melonDS::Platform::Log(
+            melonDS::Platform::LogLevel::Warn,
+            "VulkanSurfacePresenter: saved pipeline cache (%s, %llu bytes)",
+            surfacePipelineCacheFile.c_str(),
+            static_cast<unsigned long long>(cacheSize)
+        );
+    }
+}
+
+void VulkanSurfacePresenter::destroySurfacePipelineCache()
+{
+    if (device != VK_NULL_HANDLE && surfacePipelineCache != VK_NULL_HANDLE)
+    {
+        saveSurfacePipelineCache();
+        vkDestroyPipelineCache(device, surfacePipelineCache, nullptr);
+    }
+    surfacePipelineCache = VK_NULL_HANDLE;
 }
 
 bool VulkanSurfacePresenter::createInFlightFence(SurfaceState& surfaceState, bool signaled)
@@ -2006,7 +3241,7 @@ void VulkanSurfacePresenter::consumeSurfaceGpuTiming(SurfaceState& surfaceState)
 
 void VulkanSurfacePresenter::logPerformanceIfNeeded()
 {
-    if (!areRendererDebugBgObjLogsEnabled())
+    if (!areRendererDebugToolsEnabled())
         return;
 
     if (!frameWallCpuWindow.Ready())
@@ -2024,7 +3259,7 @@ void VulkanSurfacePresenter::logPerformanceIfNeeded()
 
     melonDS::Platform::Log(
         melonDS::Platform::LogLevel::Warn,
-        "VulkanPerf[Presenter]: mode=%s frame wall avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms acquire avg=%.3fms p95=%.3fms max=%.3fms desc avg=%.3fms vertex avg=%.3fms record avg=%.3fms submit avg=%.3fms present avg=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms presented=%llu direct=%llu fallback=%llu skippedWait=%llu acquireTimeouts=%llu deadlineSkipped=%llu recoveries=%llu presentMode=%d swapchainImages=%u reasons(needsReadback=%llu validation=%llu missingHandles=%llu surfaceCount=%llu) fail(frameWait=%llu composeSubmit=%llu composeWait=%llu missingImage=%llu noConfigured=%llu swapchain=%llu surfaceWait=%llu descriptor=%llu vertex=%llu acquire=%llu record=%llu submit=%llu)",
+        "VulkanPerf[Presenter]: mode=%s frame wall avg=%.3fms p95=%.3fms max=%.3fms wait avg=%.3fms p95=%.3fms max=%.3fms acquire avg=%.3fms p95=%.3fms max=%.3fms desc avg=%.3fms vertex avg=%.3fms record avg=%.3fms submit avg=%.3fms present avg=%.3fms gpu avg=%.3fms p95=%.3fms max=%.3fms presented=%llu direct=%llu fallback=%llu drawModes(bg=%llu composite=%llu top=%llu bottom=%llu filterTop=%llu filterBottom=%llu retro=%llu compTop=%llu compBottom=%llu directTop=%llu directBottom=%llu directCarryTop=%llu directCarryBottom=%llu overlay2DTop=%llu overlay2DBottom=%llu overlay2DOnlyTop=%llu overlay2DOnlyBottom=%llu overlay2DOnlyTopP0=%llu overlay2DOnlyBottomP0=%llu overlay2DOnlyTopP1=%llu overlay2DOnlyBottomP1=%llu) skippedWait=%llu acquireTimeouts=%llu deadlineSkipped=%llu recoveries=%llu presentMode=%d swapchainImages=%u reasons(needsReadback=%llu validation=%llu missingHandles=%llu surfaceCount=%llu postFilter=%llu surfaces=%llu dualHistory=%llu unsafeCarry=%llu composedReplay=%llu deferredHistory=%llu carryUnsupported=%llu packedFallback=%llu composedFallback=%llu) fail(frameWait=%llu composeSubmit=%llu composeWait=%llu missingImage=%llu noConfigured=%llu swapchain=%llu surfaceWait=%llu descriptor=%llu vertex=%llu acquire=%llu record=%llu submit=%llu)",
         lastPresentedDirect ? "direct" : "fallback",
         PerfNsToMs(frameWallSummary.MeanNs),
         PerfNsToMs(frameWallSummary.P95Ns),
@@ -2046,6 +3281,27 @@ void VulkanSurfacePresenter::logPerformanceIfNeeded()
         static_cast<unsigned long long>(presentedFrames),
         static_cast<unsigned long long>(directPresentedFrames),
         static_cast<unsigned long long>(fallbackPresentedFrames),
+        static_cast<unsigned long long>(presenterDrawModeCounts[0]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[1]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[2]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[3]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[4]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[5]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[6]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[7]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[8]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[9]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[10]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[11]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[12]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[13]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[14]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[15]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[16]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[17]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[18]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[19]),
+        static_cast<unsigned long long>(presenterDrawModeCounts[20]),
         static_cast<unsigned long long>(skippedSurfaceWaits),
         static_cast<unsigned long long>(acquireTimeouts),
         static_cast<unsigned long long>(presentSkippedForDeadline),
@@ -2056,6 +3312,15 @@ void VulkanSurfacePresenter::logPerformanceIfNeeded()
         static_cast<unsigned long long>(fallbackReasonValidationMode),
         static_cast<unsigned long long>(fallbackReasonMissingHandles),
         static_cast<unsigned long long>(fallbackReasonSurfaceCount),
+        static_cast<unsigned long long>(fallbackReasonPostProcessFilter),
+        static_cast<unsigned long long>(fallbackReasonSurfaceMultiplicity),
+        static_cast<unsigned long long>(fallbackReasonDualHistory),
+        static_cast<unsigned long long>(fallbackReasonUnsafeCarry),
+        static_cast<unsigned long long>(fallbackReasonComposedReplay),
+        static_cast<unsigned long long>(fallbackReasonDeferredHistory),
+        static_cast<unsigned long long>(fallbackReasonCarryUnsupported),
+        static_cast<unsigned long long>(fallbackReasonPackedFallback),
+        static_cast<unsigned long long>(fallbackReasonComposedFallback),
         static_cast<unsigned long long>(frameWaitFailures),
         static_cast<unsigned long long>(composeSubmitFailures),
         static_cast<unsigned long long>(composeWaitFailures),
@@ -2074,6 +3339,15 @@ void VulkanSurfacePresenter::logPerformanceIfNeeded()
     fallbackReasonValidationMode = 0;
     fallbackReasonMissingHandles = 0;
     fallbackReasonSurfaceCount = 0;
+    fallbackReasonPostProcessFilter = 0;
+    fallbackReasonSurfaceMultiplicity = 0;
+    fallbackReasonDualHistory = 0;
+    fallbackReasonUnsafeCarry = 0;
+    fallbackReasonComposedReplay = 0;
+    fallbackReasonDeferredHistory = 0;
+    fallbackReasonCarryUnsupported = 0;
+    fallbackReasonPackedFallback = 0;
+    fallbackReasonComposedFallback = 0;
     frameWaitFailures = 0;
     composeSubmitFailures = 0;
     composeWaitFailures = 0;
@@ -2086,6 +3360,7 @@ void VulkanSurfacePresenter::logPerformanceIfNeeded()
     acquireFailures = 0;
     recordFailures = 0;
     submitFailures = 0;
+    presenterDrawModeCounts.fill(0);
 }
 
 bool VulkanSurfacePresenter::ensureBackgroundTexture(SurfaceState& surfaceState, const VulkanBackgroundImage& backgroundImage)
@@ -2112,7 +3387,11 @@ void VulkanSurfacePresenter::destroyBackgroundTexture(SurfaceState& surfaceState
     surfaceState.backgroundDescriptorCache.ready = false;
 }
 
-bool VulkanSurfacePresenter::createRetroArchImage(RetroArchImageResource& resource, u32 width, u32 height)
+bool VulkanSurfacePresenter::createRetroArchImage(
+    RetroArchImageResource& resource,
+    u32 width,
+    u32 height,
+    melonDS::VulkanPipelineProfile pipelineProfile)
 {
     destroyRetroArchImage(resource);
     if (width == 0 || height == 0)
@@ -2128,10 +3407,7 @@ bool VulkanSurfacePresenter::createRetroArchImage(RetroArchImageResource& resour
     imageInfo.arrayLayers = 1;
     imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
     imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
-    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_SRC_BIT
-        | VK_IMAGE_USAGE_TRANSFER_DST_BIT
-        | VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT
-        | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.usage = RetroArchImageUsage(pipelineProfile);
     imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
     imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
 
@@ -2308,7 +3584,8 @@ bool VulkanSurfacePresenter::ensureRetroArchResources(
     u32 outputScreenWidth,
     u32 outputScreenHeight,
     u32 outputAtlasWidth,
-    u32 outputAtlasHeight)
+    u32 outputAtlasHeight,
+    melonDS::VulkanPipelineProfile pipelineProfile)
 {
     RetroArchResources& retro = surfaceState.retroArch;
     const bool sizeMatches =
@@ -2316,7 +3593,8 @@ bool VulkanSurfacePresenter::ensureRetroArchResources(
         && retro.bottomInput.width == sourceScreenWidth && retro.bottomInput.height == sourceScreenHeight
         && retro.topOutput.width == outputScreenWidth && retro.topOutput.height == outputScreenHeight
         && retro.bottomOutput.width == outputScreenWidth && retro.bottomOutput.height == outputScreenHeight
-        && retro.atlasOutput.width == outputAtlasWidth && retro.atlasOutput.height == outputAtlasHeight;
+        && retro.atlasOutput.width == outputAtlasWidth && retro.atlasOutput.height == outputAtlasHeight
+        && retro.pipelineProfile == pipelineProfile;
 
     if (retro.initialized && sizeMatches)
         return true;
@@ -2343,16 +3621,17 @@ bool VulkanSurfacePresenter::ensureRetroArchResources(
     if (vkCreateFence(device, &fenceInfo, nullptr, &retro.fence) != VK_SUCCESS)
         return false;
 
-    if (!createRetroArchImage(retro.topInput, sourceScreenWidth, sourceScreenHeight)
-        || !createRetroArchImage(retro.bottomInput, sourceScreenWidth, sourceScreenHeight)
-        || !createRetroArchImage(retro.topOutput, outputScreenWidth, outputScreenHeight)
-        || !createRetroArchImage(retro.bottomOutput, outputScreenWidth, outputScreenHeight)
-        || !createRetroArchImage(retro.atlasOutput, outputAtlasWidth, outputAtlasHeight))
+    if (!createRetroArchImage(retro.topInput, sourceScreenWidth, sourceScreenHeight, pipelineProfile)
+        || !createRetroArchImage(retro.bottomInput, sourceScreenWidth, sourceScreenHeight, pipelineProfile)
+        || !createRetroArchImage(retro.topOutput, outputScreenWidth, outputScreenHeight, pipelineProfile)
+        || !createRetroArchImage(retro.bottomOutput, outputScreenWidth, outputScreenHeight, pipelineProfile)
+        || !createRetroArchImage(retro.atlasOutput, outputAtlasWidth, outputAtlasHeight, pipelineProfile))
     {
         destroyRetroArchResources(surfaceState);
         return false;
     }
 
+    retro.pipelineProfile = pipelineProfile;
     retro.initialized = true;
     return true;
 }
@@ -2383,6 +3662,7 @@ bool VulkanSurfacePresenter::runRetroArchFilter(
     VkImageView sourceAtlasImageView,
     u32 atlasWidth,
     u32 atlasHeight,
+    melonDS::VulkanPipelineProfile pipelineProfile,
     VkImage& outputImage,
     VkImageView& outputImageView)
 {
@@ -2438,7 +3718,8 @@ bool VulkanSurfacePresenter::runRetroArchFilter(
             sizing.outputScreenWidth,
             sizing.outputScreenHeight,
             sizing.outputAtlasWidth,
-            sizing.outputAtlasHeight))
+            sizing.outputAtlasHeight,
+            pipelineProfile))
     {
         melonDS::Platform::Log(
             melonDS::Platform::LogLevel::Warn,
@@ -2941,12 +4222,31 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
     VkDescriptorImageInfo rendererImageInfo{};
     rendererImageInfo.imageView = inputs.sourceImageView;
     rendererImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo exactObjSourceImageInfo{};
+    exactObjSourceImageInfo.imageView = inputs.exactObjSourceImageView;
+    exactObjSourceImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     VkDescriptorImageInfo previousTopRendererImageInfo{};
     previousTopRendererImageInfo.imageView = inputs.previousTopSourceImageView;
     previousTopRendererImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
     VkDescriptorImageInfo previousBottomRendererImageInfo{};
     previousBottomRendererImageInfo.imageView = inputs.previousBottomSourceImageView;
     previousBottomRendererImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo topComposedCarryImageInfo{};
+    topComposedCarryImageInfo.imageView = surfaceState.topComposedCarry.imageView != VK_NULL_HANDLE
+        ? surfaceState.topComposedCarry.imageView
+        : inputs.sourceImageView;
+    topComposedCarryImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo bottomComposedCarryImageInfo{};
+    bottomComposedCarryImageInfo.imageView = surfaceState.bottomComposedCarry.imageView != VK_NULL_HANDLE
+        ? surfaceState.bottomComposedCarry.imageView
+        : inputs.sourceImageView;
+    bottomComposedCarryImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
+    VkDescriptorImageInfo bottomComp2OneShotCarryImageInfo{};
+    bottomComp2OneShotCarryImageInfo.imageView =
+        surfaceState.bottomComp2OneShotCarry.imageView != VK_NULL_HANDLE
+            ? surfaceState.bottomComp2OneShotCarry.imageView
+            : inputs.sourceImageView;
+    bottomComp2OneShotCarryImageInfo.imageLayout = VK_IMAGE_LAYOUT_GENERAL;
 
     VkDescriptorBufferInfo topPackedBufferInfo{};
     topPackedBufferInfo.buffer = inputs.topPackedBuffer;
@@ -2974,13 +4274,18 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         || screenCache.sampledImageLayout != screenImageInfo.imageLayout
         || screenCache.sampledSampler != screenImageInfo.sampler
         || screenCache.rendererImageView != inputs.sourceImageView
+        || screenCache.exactObjSourceImageView != inputs.exactObjSourceImageView
         || screenCache.previousTopRendererImageView != inputs.previousTopSourceImageView
         || screenCache.previousBottomRendererImageView != inputs.previousBottomSourceImageView
+        || screenCache.topComposedCarryImageView != topComposedCarryImageInfo.imageView
+        || screenCache.bottomComposedCarryImageView != bottomComposedCarryImageInfo.imageView
+        || screenCache.bottomComp2OneShotCarryImageView
+            != bottomComp2OneShotCarryImageInfo.imageView
         || screenCache.topPackedBuffer != inputs.topPackedBuffer
         || screenCache.bottomPackedBuffer != inputs.bottomPackedBuffer
         || screenCache.capture3dBuffer != inputs.capture3dBuffer)
     {
-        std::array<VkWriteDescriptorSet, 7> screenWrites{};
+        std::array<VkWriteDescriptorSet, 11> screenWrites{};
         u32 screenWriteCount = 0;
         auto appendScreenImageWrite = [&](u32 binding, const VkDescriptorImageInfo* info, VkDescriptorType descriptorType) {
             VkWriteDescriptorSet& write = screenWrites[screenWriteCount++];
@@ -3013,6 +4318,10 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         {
             appendScreenImageWrite(1, &rendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         }
+        if (!screenCache.ready || screenInputShapeChanged || screenCache.exactObjSourceImageView != inputs.exactObjSourceImageView)
+        {
+            appendScreenImageWrite(9, &exactObjSourceImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
         if (!screenCache.ready || screenInputShapeChanged || screenCache.previousTopRendererImageView != inputs.previousTopSourceImageView)
         {
             appendScreenImageWrite(4, &previousTopRendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
@@ -3020,6 +4329,24 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         if (!screenCache.ready || screenInputShapeChanged || screenCache.previousBottomRendererImageView != inputs.previousBottomSourceImageView)
         {
             appendScreenImageWrite(6, &previousBottomRendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
+        if (!screenCache.ready || screenInputShapeChanged || screenCache.topComposedCarryImageView != topComposedCarryImageInfo.imageView)
+        {
+            appendScreenImageWrite(7, &topComposedCarryImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
+        if (!screenCache.ready || screenInputShapeChanged || screenCache.bottomComposedCarryImageView != bottomComposedCarryImageInfo.imageView)
+        {
+            appendScreenImageWrite(8, &bottomComposedCarryImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
+        if (!screenCache.ready
+            || screenInputShapeChanged
+            || screenCache.bottomComp2OneShotCarryImageView
+                != bottomComp2OneShotCarryImageInfo.imageView)
+        {
+            appendScreenImageWrite(
+                10,
+                &bottomComp2OneShotCarryImageInfo,
+                VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         }
         if (!screenCache.ready || screenInputShapeChanged || screenCache.topPackedBuffer != inputs.topPackedBuffer)
         {
@@ -3042,8 +4369,13 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         screenCache.sampledImageLayout = screenImageInfo.imageLayout;
         screenCache.sampledSampler = screenImageInfo.sampler;
         screenCache.rendererImageView = inputs.sourceImageView;
+        screenCache.exactObjSourceImageView = inputs.exactObjSourceImageView;
         screenCache.previousTopRendererImageView = inputs.previousTopSourceImageView;
         screenCache.previousBottomRendererImageView = inputs.previousBottomSourceImageView;
+        screenCache.topComposedCarryImageView = topComposedCarryImageInfo.imageView;
+        screenCache.bottomComposedCarryImageView = bottomComposedCarryImageInfo.imageView;
+        screenCache.bottomComp2OneShotCarryImageView =
+            bottomComp2OneShotCarryImageInfo.imageView;
         screenCache.topPackedBuffer = inputs.topPackedBuffer;
         screenCache.bottomPackedBuffer = inputs.bottomPackedBuffer;
         screenCache.capture3dBuffer = inputs.capture3dBuffer;
@@ -3060,8 +4392,13 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
             || backgroundCache.sampledImageLayout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
             || backgroundCache.sampledSampler != linearSampler
             || backgroundCache.rendererImageView != inputs.sourceImageView
+            || backgroundCache.exactObjSourceImageView != inputs.exactObjSourceImageView
             || backgroundCache.previousTopRendererImageView != inputs.previousTopSourceImageView
             || backgroundCache.previousBottomRendererImageView != inputs.previousBottomSourceImageView
+            || backgroundCache.topComposedCarryImageView != topComposedCarryImageInfo.imageView
+            || backgroundCache.bottomComposedCarryImageView != bottomComposedCarryImageInfo.imageView
+            || backgroundCache.bottomComp2OneShotCarryImageView
+                != bottomComp2OneShotCarryImageInfo.imageView
             || backgroundCache.topPackedBuffer != inputs.topPackedBuffer
             || backgroundCache.bottomPackedBuffer != inputs.bottomPackedBuffer
             || backgroundCache.capture3dBuffer != inputs.capture3dBuffer))
@@ -3071,7 +4408,7 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         backgroundImageInfo.imageView = surfaceState.background.imageView;
         backgroundImageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
 
-        std::array<VkWriteDescriptorSet, 7> backgroundWrites{};
+        std::array<VkWriteDescriptorSet, 11> backgroundWrites{};
         u32 backgroundWriteCount = 0;
         auto appendBackgroundImageWrite = [&](u32 binding, const VkDescriptorImageInfo* info, VkDescriptorType descriptorType) {
             VkWriteDescriptorSet& write = backgroundWrites[backgroundWriteCount++];
@@ -3106,6 +4443,12 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         }
         if (!backgroundCache.ready
             || surfaceState.backgroundDescriptorDirty
+            || backgroundCache.exactObjSourceImageView != inputs.exactObjSourceImageView)
+        {
+            appendBackgroundImageWrite(9, &exactObjSourceImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
+        if (!backgroundCache.ready
+            || surfaceState.backgroundDescriptorDirty
             || backgroundCache.previousTopRendererImageView != inputs.previousTopSourceImageView)
         {
             appendBackgroundImageWrite(4, &previousTopRendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
@@ -3115,6 +4458,28 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
             || backgroundCache.previousBottomRendererImageView != inputs.previousBottomSourceImageView)
         {
             appendBackgroundImageWrite(6, &previousBottomRendererImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
+        if (!backgroundCache.ready
+            || surfaceState.backgroundDescriptorDirty
+            || backgroundCache.topComposedCarryImageView != topComposedCarryImageInfo.imageView)
+        {
+            appendBackgroundImageWrite(7, &topComposedCarryImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
+        if (!backgroundCache.ready
+            || surfaceState.backgroundDescriptorDirty
+            || backgroundCache.bottomComposedCarryImageView != bottomComposedCarryImageInfo.imageView)
+        {
+            appendBackgroundImageWrite(8, &bottomComposedCarryImageInfo, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
+        }
+        if (!backgroundCache.ready
+            || surfaceState.backgroundDescriptorDirty
+            || backgroundCache.bottomComp2OneShotCarryImageView
+                != bottomComp2OneShotCarryImageInfo.imageView)
+        {
+            appendBackgroundImageWrite(
+                10,
+                &bottomComp2OneShotCarryImageInfo,
+                VK_DESCRIPTOR_TYPE_STORAGE_IMAGE);
         }
         if (!backgroundCache.ready || surfaceState.backgroundDescriptorDirty || backgroundCache.topPackedBuffer != inputs.topPackedBuffer)
         {
@@ -3137,8 +4502,13 @@ bool VulkanSurfacePresenter::updateDescriptorSets(
         backgroundCache.sampledImageLayout = backgroundImageInfo.imageLayout;
         backgroundCache.sampledSampler = backgroundImageInfo.sampler;
         backgroundCache.rendererImageView = inputs.sourceImageView;
+        backgroundCache.exactObjSourceImageView = inputs.exactObjSourceImageView;
         backgroundCache.previousTopRendererImageView = inputs.previousTopSourceImageView;
         backgroundCache.previousBottomRendererImageView = inputs.previousBottomSourceImageView;
+        backgroundCache.topComposedCarryImageView = topComposedCarryImageInfo.imageView;
+        backgroundCache.bottomComposedCarryImageView = bottomComposedCarryImageInfo.imageView;
+        backgroundCache.bottomComp2OneShotCarryImageView =
+            bottomComp2OneShotCarryImageInfo.imageView;
         backgroundCache.topPackedBuffer = inputs.topPackedBuffer;
         backgroundCache.bottomPackedBuffer = inputs.bottomPackedBuffer;
         backgroundCache.capture3dBuffer = inputs.capture3dBuffer;
@@ -3152,13 +4522,36 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
     SurfaceState& surfaceState,
     const VulkanSurfaceConfig& config,
     const BackgroundResource* backgroundResource,
+    const VulkanCompositionInputs& inputs,
     bool directPresent,
     bool retroArchApplied,
+    bool visibleCompositePresent,
     std::vector<DrawCall>& drawCalls)
 {
     if (!surfaceState.vertexBufferDirty
         && surfaceState.cachedDirectPresent == directPresent
-        && surfaceState.cachedRetroArchApplied == retroArchApplied)
+        && surfaceState.cachedRetroArchApplied == retroArchApplied
+        && surfaceState.cachedVisibleCompositePresent == visibleCompositePresent
+        && surfaceState.cachedFastHighresOnlyTop == inputs.fastHighresOnlyTop
+        && surfaceState.cachedFastHighresOnlyBottom == inputs.fastHighresOnlyBottom
+        && surfaceState.cachedFastHighresOverlay2DTop == inputs.fastHighresOverlay2DTop
+        && surfaceState.cachedFastHighresOverlay2DBottom == inputs.fastHighresOverlay2DBottom
+        && surfaceState.cachedFastPacked2DOnlyTop == inputs.fastPacked2DOnlyTop
+        && surfaceState.cachedFastPacked2DOnlyBottom == inputs.fastPacked2DOnlyBottom
+        && surfaceState.cachedFastPacked2DOnlyLayerTop == inputs.fastPacked2DOnlyLayerTop
+        && surfaceState.cachedFastPacked2DOnlyLayerBottom == inputs.fastPacked2DOnlyLayerBottom
+        && surfaceState.cachedTopOverlay2DMinX == inputs.topOverlay2DMinX
+        && surfaceState.cachedTopOverlay2DMinY == inputs.topOverlay2DMinY
+        && surfaceState.cachedTopOverlay2DMaxX == inputs.topOverlay2DMaxX
+        && surfaceState.cachedTopOverlay2DMaxY == inputs.topOverlay2DMaxY
+        && surfaceState.cachedBottomOverlay2DMinX == inputs.bottomOverlay2DMinX
+        && surfaceState.cachedBottomOverlay2DMinY == inputs.bottomOverlay2DMinY
+        && surfaceState.cachedBottomOverlay2DMaxX == inputs.bottomOverlay2DMaxX
+        && surfaceState.cachedBottomOverlay2DMaxY == inputs.bottomOverlay2DMaxY
+        && surfaceState.cachedDirectTopCarryRequired == inputs.directPresentTopCarryRequired
+        && surfaceState.cachedDirectBottomCarryRequired == inputs.directPresentBottomCarryRequired
+        && surfaceState.cachedDirectTopComposedCarryRequired == inputs.directPresentTopComposedCarryRequired
+        && surfaceState.cachedDirectBottomComposedCarryRequired == inputs.directPresentBottomComposedCarryRequired)
     {
         drawCalls = surfaceState.cachedDrawCalls;
         return true;
@@ -3193,6 +4586,36 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
             .drawMode = drawMode,
             .viewportWidth = 0.0f,
             .viewportHeight = 0.0f,
+        });
+    };
+    auto appendUvQuad = [&](
+        float left,
+        float right,
+        float top,
+        float bottom,
+        float uvLeft,
+        float uvRight,
+        float uvTop,
+        float uvBottom,
+        float alpha,
+        u32 drawMode,
+        VkDescriptorSet descriptorSet,
+        float viewportWidth,
+        float viewportHeight) {
+        const u32 firstVertex = static_cast<u32>(vertices.size());
+        vertices.push_back(SurfaceVertex{left, bottom, uvLeft, uvBottom, alpha});
+        vertices.push_back(SurfaceVertex{left, top, uvLeft, uvTop, alpha});
+        vertices.push_back(SurfaceVertex{right, top, uvRight, uvTop, alpha});
+        vertices.push_back(SurfaceVertex{left, bottom, uvLeft, uvBottom, alpha});
+        vertices.push_back(SurfaceVertex{right, top, uvRight, uvTop, alpha});
+        vertices.push_back(SurfaceVertex{right, bottom, uvRight, uvBottom, alpha});
+        drawCalls.push_back(DrawCall{
+            .descriptorSet = descriptorSet,
+            .firstVertex = firstVertex,
+            .vertexCount = 6,
+            .drawMode = drawMode,
+            .viewportWidth = viewportWidth,
+            .viewportHeight = viewportHeight,
         });
     };
 
@@ -3275,6 +4698,40 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
         appendQuad(left, right, top, bottom, 1.0f, kDrawModeBackground, surfaceState.backgroundDescriptorSet);
     }
 
+    if (visibleCompositePresent)
+    {
+        appendQuad(-1.0f, 1.0f, 1.0f, -1.0f, 1.0f, kDrawModeCompositeFrame, surfaceState.screenDescriptorSet);
+        if (surfaceState.mappedVertexMemory == nullptr)
+            return false;
+        std::memcpy(surfaceState.mappedVertexMemory, vertices.data(), vertices.size() * sizeof(SurfaceVertex));
+        surfaceState.cachedDrawCalls = drawCalls;
+        surfaceState.cachedDirectPresent = directPresent;
+        surfaceState.cachedRetroArchApplied = retroArchApplied;
+        surfaceState.cachedVisibleCompositePresent = visibleCompositePresent;
+        surfaceState.cachedFastHighresOnlyTop = inputs.fastHighresOnlyTop;
+        surfaceState.cachedFastHighresOnlyBottom = inputs.fastHighresOnlyBottom;
+        surfaceState.cachedFastHighresOverlay2DTop = inputs.fastHighresOverlay2DTop;
+        surfaceState.cachedFastHighresOverlay2DBottom = inputs.fastHighresOverlay2DBottom;
+        surfaceState.cachedFastPacked2DOnlyTop = inputs.fastPacked2DOnlyTop;
+        surfaceState.cachedFastPacked2DOnlyBottom = inputs.fastPacked2DOnlyBottom;
+        surfaceState.cachedFastPacked2DOnlyLayerTop = inputs.fastPacked2DOnlyLayerTop;
+        surfaceState.cachedFastPacked2DOnlyLayerBottom = inputs.fastPacked2DOnlyLayerBottom;
+        surfaceState.cachedTopOverlay2DMinX = inputs.topOverlay2DMinX;
+        surfaceState.cachedTopOverlay2DMinY = inputs.topOverlay2DMinY;
+        surfaceState.cachedTopOverlay2DMaxX = inputs.topOverlay2DMaxX;
+        surfaceState.cachedTopOverlay2DMaxY = inputs.topOverlay2DMaxY;
+        surfaceState.cachedBottomOverlay2DMinX = inputs.bottomOverlay2DMinX;
+        surfaceState.cachedBottomOverlay2DMinY = inputs.bottomOverlay2DMinY;
+        surfaceState.cachedBottomOverlay2DMaxX = inputs.bottomOverlay2DMaxX;
+        surfaceState.cachedBottomOverlay2DMaxY = inputs.bottomOverlay2DMaxY;
+        surfaceState.cachedDirectTopCarryRequired = inputs.directPresentTopCarryRequired;
+        surfaceState.cachedDirectBottomCarryRequired = inputs.directPresentBottomCarryRequired;
+        surfaceState.cachedDirectTopComposedCarryRequired = inputs.directPresentTopComposedCarryRequired;
+        surfaceState.cachedDirectBottomComposedCarryRequired = inputs.directPresentBottomComposedCarryRequired;
+        surfaceState.vertexBufferDirty = false;
+        return true;
+    }
+
     auto appendScreen = [&](const VulkanPresenterRect& rect, bool topScreen, float alpha) {
         if (!rect.enabled || rect.width <= 0 || rect.height <= 0)
             return;
@@ -3285,13 +4742,71 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
         const float bottom = screenYToNdc(rect.y + rect.height);
         const float uvTop = directPresent ? 0.0f : (topScreen ? 0.0f : (0.5f + (1.0f / 386.0f)));
         const float uvBottom = directPresent ? 1.0f : (topScreen ? (0.5f - (1.0f / 386.0f)) : 1.0f);
-        const u32 drawMode = directPresent
-            ? (topScreen ? kDrawModeTopScreen : kDrawModeBottomScreen)
-            : (retroArchApplied
+        const bool canUseDirectHighresOnly =
+            directPresent
+            && (topScreen ? inputs.fastHighresOnlyTop : inputs.fastHighresOnlyBottom);
+        const bool canUseDirectOverlay2D =
+            directPresent
+            && alpha >= 0.999f
+            && (topScreen ? inputs.fastHighresOverlay2DTop : inputs.fastHighresOverlay2DBottom);
+        const bool directHighresCarryRequired =
+            topScreen ? inputs.directPresentTopCarryRequired : inputs.directPresentBottomCarryRequired;
+        const bool directComposedCarryRequired =
+            topScreen ? inputs.directPresentTopComposedCarryRequired : inputs.directPresentBottomComposedCarryRequired;
+        const bool canUseDirectPacked2DOnly =
+            directPresent
+            && alpha >= 0.999f
+            && !directHighresCarryRequired
+            && !directComposedCarryRequired
+            && (topScreen ? inputs.fastPacked2DOnlyTop : inputs.fastPacked2DOnlyBottom);
+        const u32 directPacked2DOnlyLayer =
+            topScreen ? inputs.fastPacked2DOnlyLayerTop : inputs.fastPacked2DOnlyLayerBottom;
+        const bool compatibilityDirectPresent =
+            directPresent
+            && !melonDS::UsesVulkanFastPath(inputs.pipelineProfile);
+        u32 drawMode = topScreen ? kDrawModeTopScreen : kDrawModeBottomScreen;
+        if (compatibilityDirectPresent)
+        {
+            drawMode = topScreen ? kDrawModeTopScreen : kDrawModeBottomScreen;
+        }
+        else if (directPresent && directComposedCarryRequired)
+        {
+            drawMode = topScreen ? kDrawModeDirectHighresCarryTop : kDrawModeDirectHighresCarryBottom;
+        }
+        else if (canUseDirectPacked2DOnly && directPacked2DOnlyLayer == 0u)
+        {
+            drawMode = topScreen ? kDrawModeDirectOverlay2DOnlyTopPlane0 : kDrawModeDirectOverlay2DOnlyBottomPlane0;
+        }
+        else if (canUseDirectPacked2DOnly && directPacked2DOnlyLayer == 1u)
+        {
+            drawMode = topScreen ? kDrawModeDirectOverlay2DOnlyTopPlane1 : kDrawModeDirectOverlay2DOnlyBottomPlane1;
+        }
+        else if (canUseDirectPacked2DOnly)
+        {
+            drawMode = topScreen ? kDrawModeDirectOverlay2DOnlyTop : kDrawModeDirectOverlay2DOnlyBottom;
+        }
+        else if (directPresent && canUseDirectHighresOnly)
+        {
+            drawMode = topScreen ? kDrawModeDirectHighresTop : kDrawModeDirectHighresBottom;
+        }
+        else if (directPresent && canUseDirectOverlay2D)
+        {
+            drawMode = topScreen ? kDrawModeDirectOverlay2DTop : kDrawModeDirectOverlay2DBottom;
+        }
+        else if (directPresent)
+        {
+            drawMode = topScreen ? kDrawModeDirectOverlay2DTop : kDrawModeDirectOverlay2DBottom;
+        }
+        else if (!directPresent)
+        {
+            drawMode = retroArchApplied
                 ? kDrawModeRetroArchCompositeFrame
                 : (config.filtering != VulkanFilterMode::RetroArch && IsVulkanPostProcessFilter(config.filtering)
-                ? (topScreen ? kDrawModeFilteredCompositeTop : kDrawModeFilteredCompositeBottom)
-                : kDrawModeCompositeFrame));
+                    ? (topScreen ? kDrawModeFilteredCompositeTop : kDrawModeFilteredCompositeBottom)
+                    : (melonDS::UsesVulkanFastPath(inputs.pipelineProfile)
+                        ? (topScreen ? kDrawModeCompositeTop : kDrawModeCompositeBottom)
+                        : kDrawModeCompositeFrame));
+        }
         const float topVertexUv = directPresent ? uvBottom : uvTop;
         const float bottomVertexUv = directPresent ? uvTop : uvBottom;
 
@@ -3311,6 +4826,40 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
             .viewportWidth = static_cast<float>(rect.width),
             .viewportHeight = static_cast<float>(rect.height),
         });
+        if (!canUseDirectOverlay2D
+            || drawMode == kDrawModeDirectOverlay2DTop
+            || drawMode == kDrawModeDirectOverlay2DBottom)
+            return;
+
+        const u32 minX = topScreen ? inputs.topOverlay2DMinX : inputs.bottomOverlay2DMinX;
+        const u32 minY = topScreen ? inputs.topOverlay2DMinY : inputs.bottomOverlay2DMinY;
+        const u32 maxX = topScreen ? inputs.topOverlay2DMaxX : inputs.bottomOverlay2DMaxX;
+        const u32 maxY = topScreen ? inputs.topOverlay2DMaxY : inputs.bottomOverlay2DMaxY;
+        if (maxX < minX || maxY < minY || maxX >= kNativeScreenWidth || maxY >= kNativeScreenHeight)
+            return;
+
+        const float overlayLeftPx = static_cast<float>(rect.x)
+            + (static_cast<float>(minX) / static_cast<float>(kNativeScreenWidth)) * static_cast<float>(rect.width);
+        const float overlayRightPx = static_cast<float>(rect.x)
+            + (static_cast<float>(maxX + 1u) / static_cast<float>(kNativeScreenWidth)) * static_cast<float>(rect.width);
+        const float overlayTopPx = static_cast<float>(rect.y)
+            + (static_cast<float>(minY) / static_cast<float>(kNativeScreenHeight)) * static_cast<float>(rect.height);
+        const float overlayBottomPx = static_cast<float>(rect.y)
+            + (static_cast<float>(maxY + 1u) / static_cast<float>(kNativeScreenHeight)) * static_cast<float>(rect.height);
+        appendUvQuad(
+            (overlayLeftPx / surfaceWidth) * 2.0f - 1.0f,
+            (overlayRightPx / surfaceWidth) * 2.0f - 1.0f,
+            1.0f - (overlayTopPx / surfaceHeight) * 2.0f,
+            1.0f - (overlayBottomPx / surfaceHeight) * 2.0f,
+            static_cast<float>(minX) / static_cast<float>(kNativeScreenWidth),
+            static_cast<float>(maxX + 1u) / static_cast<float>(kNativeScreenWidth),
+            1.0f - (static_cast<float>(minY) / static_cast<float>(kNativeScreenHeight)),
+            1.0f - (static_cast<float>(maxY + 1u) / static_cast<float>(kNativeScreenHeight)),
+            alpha,
+            topScreen ? kDrawModeDirectOverlay2DOnlyTop : kDrawModeDirectOverlay2DOnlyBottom,
+            surfaceState.screenDescriptorSet,
+            static_cast<float>(rect.width),
+            static_cast<float>(rect.height));
     };
 
     struct PendingScreen
@@ -3421,6 +4970,27 @@ bool VulkanSurfacePresenter::updateVertexBuffer(
     surfaceState.cachedDrawCalls = drawCalls;
     surfaceState.cachedDirectPresent = directPresent;
     surfaceState.cachedRetroArchApplied = retroArchApplied;
+    surfaceState.cachedVisibleCompositePresent = visibleCompositePresent;
+    surfaceState.cachedFastHighresOnlyTop = inputs.fastHighresOnlyTop;
+    surfaceState.cachedFastHighresOnlyBottom = inputs.fastHighresOnlyBottom;
+    surfaceState.cachedFastHighresOverlay2DTop = inputs.fastHighresOverlay2DTop;
+    surfaceState.cachedFastHighresOverlay2DBottom = inputs.fastHighresOverlay2DBottom;
+    surfaceState.cachedFastPacked2DOnlyTop = inputs.fastPacked2DOnlyTop;
+    surfaceState.cachedFastPacked2DOnlyBottom = inputs.fastPacked2DOnlyBottom;
+    surfaceState.cachedFastPacked2DOnlyLayerTop = inputs.fastPacked2DOnlyLayerTop;
+    surfaceState.cachedFastPacked2DOnlyLayerBottom = inputs.fastPacked2DOnlyLayerBottom;
+    surfaceState.cachedTopOverlay2DMinX = inputs.topOverlay2DMinX;
+    surfaceState.cachedTopOverlay2DMinY = inputs.topOverlay2DMinY;
+    surfaceState.cachedTopOverlay2DMaxX = inputs.topOverlay2DMaxX;
+    surfaceState.cachedTopOverlay2DMaxY = inputs.topOverlay2DMaxY;
+    surfaceState.cachedBottomOverlay2DMinX = inputs.bottomOverlay2DMinX;
+    surfaceState.cachedBottomOverlay2DMinY = inputs.bottomOverlay2DMinY;
+    surfaceState.cachedBottomOverlay2DMaxX = inputs.bottomOverlay2DMaxX;
+    surfaceState.cachedBottomOverlay2DMaxY = inputs.bottomOverlay2DMaxY;
+    surfaceState.cachedDirectTopCarryRequired = inputs.directPresentTopCarryRequired;
+    surfaceState.cachedDirectBottomCarryRequired = inputs.directPresentBottomCarryRequired;
+    surfaceState.cachedDirectTopComposedCarryRequired = inputs.directPresentTopComposedCarryRequired;
+    surfaceState.cachedDirectBottomComposedCarryRequired = inputs.directPresentBottomComposedCarryRequired;
     surfaceState.vertexBufferDirty = false;
 
     return true;
@@ -3432,9 +5002,21 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     const VulkanCompositionInputs& inputs,
     VkImage sampledImage,
     bool directPresent,
-    const std::vector<DrawCall>& drawCalls)
+    const std::vector<DrawCall>& drawCalls,
+    bool bottomComp2OneShotStore,
+    bool bottomComp2OneShotConsume,
+    bool bottomClass4OneShotOverlaySource,
+    bool bottomClass4OneShotOverlayBridge,
+    bool bottomClass4OneShotOverlayMerge,
+    bool bottomClass4OneShotCarryWriter,
+    bool bottomClass4OneShotCarryConsumer)
 {
-    (void)directPresent;
+    surfaceState.pendingTopComposedCarryWritten = false;
+    surfaceState.pendingTopComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
+    surfaceState.pendingBottomComposedCarryWritten = false;
+    surfaceState.pendingBottomComposedCarryWriterPhase =
+        kComposedCarryWriterPhaseNone;
 
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE && resetQueryPool != nullptr)
         resetQueryPool(device, surfaceState.timestampQueryPool, 0, 2);
@@ -3452,18 +5034,18 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE)
         vkCmdWriteTimestamp(surfaceState.commandBuffer, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, surfaceState.timestampQueryPool, 0);
 
-    std::array<VkImageMemoryBarrier, 4> sourceBarriers{};
+    std::array<VkImageMemoryBarrier, 8> sourceBarriers{};
     u32 sourceBarrierCount = 0;
 
-    auto appendImageBarrier = [&](VkImage image) {
-        if (image == VK_NULL_HANDLE)
+    auto appendImageBarrier = [&](VkImage image, VkImageLayout oldLayout, VkAccessFlags srcAccessMask, VkAccessFlags dstAccessMask) {
+        if (image == VK_NULL_HANDLE || sourceBarrierCount >= sourceBarriers.size())
             return;
 
         VkImageMemoryBarrier& barrier = sourceBarriers[sourceBarrierCount++];
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
-        barrier.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
-        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
-        barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
+        barrier.srcAccessMask = srcAccessMask;
+        barrier.dstAccessMask = dstAccessMask;
+        barrier.oldLayout = oldLayout;
         barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
@@ -3472,21 +5054,68 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
         barrier.subresourceRange.levelCount = 1;
         barrier.subresourceRange.layerCount = 1;
     };
+    auto appendSourceImageBarrier = [&](VkImage image) {
+        appendImageBarrier(
+            image,
+            VK_IMAGE_LAYOUT_GENERAL,
+            VK_ACCESS_MEMORY_WRITE_BIT | VK_ACCESS_SHADER_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+            VK_ACCESS_SHADER_READ_BIT);
+    };
+    auto appendCarryImageBarrier = [&](RetroArchImageResource& carry, bool valid) {
+        if (carry.image == VK_NULL_HANDLE)
+            return;
+        appendImageBarrier(
+            carry.image,
+            carry.layout == VK_IMAGE_LAYOUT_UNDEFINED ? VK_IMAGE_LAYOUT_UNDEFINED : VK_IMAGE_LAYOUT_GENERAL,
+            valid ? (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT) : 0,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
+        carry.layout = VK_IMAGE_LAYOUT_GENERAL;
+    };
 
-    appendImageBarrier(sampledImage);
+    appendSourceImageBarrier(sampledImage);
     if (inputs.sourceImage != sampledImage && sourceBarrierCount < sourceBarriers.size())
-        appendImageBarrier(inputs.sourceImage);
+        appendSourceImageBarrier(inputs.sourceImage);
     if (inputs.previousTopSourceImage != sampledImage
         && inputs.previousTopSourceImage != inputs.sourceImage
         && sourceBarrierCount < sourceBarriers.size())
     {
-        appendImageBarrier(inputs.previousTopSourceImage);
+        appendSourceImageBarrier(inputs.previousTopSourceImage);
     }
     if (inputs.previousBottomSourceImage != sampledImage
         && inputs.previousBottomSourceImage != inputs.sourceImage
         && sourceBarrierCount < sourceBarriers.size())
     {
-        appendImageBarrier(inputs.previousBottomSourceImage);
+        appendSourceImageBarrier(inputs.previousBottomSourceImage);
+    }
+    if (inputs.exactObjSourceImage != sampledImage
+        && inputs.exactObjSourceImage != inputs.sourceImage
+        && inputs.exactObjSourceImage != inputs.previousTopSourceImage
+        && inputs.exactObjSourceImage != inputs.previousBottomSourceImage
+        && sourceBarrierCount < sourceBarriers.size())
+    {
+        appendSourceImageBarrier(inputs.exactObjSourceImage);
+    }
+    appendCarryImageBarrier(surfaceState.topComposedCarry, surfaceState.topComposedCarryValid);
+    appendCarryImageBarrier(surfaceState.bottomComposedCarry, surfaceState.bottomComposedCarryValid);
+    if (bottomComp2OneShotStore
+        || bottomComp2OneShotConsume
+        || bottomClass4OneShotOverlaySource
+        || bottomClass4OneShotOverlayBridge
+        || bottomClass4OneShotOverlayMerge
+        || bottomClass4OneShotCarryWriter
+        || bottomClass4OneShotCarryConsumer)
+    {
+        RetroArchImageResource& oneShot =
+            surfaceState.bottomComp2OneShotCarry;
+        appendImageBarrier(
+            oneShot.image,
+            oneShot.layout == VK_IMAGE_LAYOUT_UNDEFINED
+                ? VK_IMAGE_LAYOUT_UNDEFINED
+                : VK_IMAGE_LAYOUT_GENERAL,
+            oneShot.layout == VK_IMAGE_LAYOUT_GENERAL
+                ? (VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT)
+                : 0,
+            VK_ACCESS_SHADER_READ_BIT | VK_ACCESS_SHADER_WRITE_BIT);
     }
 
     if (sourceBarrierCount > 0)
@@ -3570,7 +5199,13 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     renderPassInfo.pClearValues = &clearValue;
 
     vkCmdBeginRenderPass(surfaceState.commandBuffer, &renderPassInfo, VK_SUBPASS_CONTENTS_INLINE);
-    vkCmdBindPipeline(surfaceState.commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, surfaceState.pipeline);
+    const bool fastPathProfile = melonDS::UsesVulkanFastPath(inputs.pipelineProfile);
+    vkCmdBindPipeline(
+        surfaceState.commandBuffer,
+        VK_PIPELINE_BIND_POINT_GRAPHICS,
+        fastPathProfile
+            ? surfaceState.pipeline
+            : surfaceState.compatibilityPipeline);
 
     VkViewport viewport{};
     viewport.x = 0.0f;
@@ -3588,8 +5223,48 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
     VkDeviceSize vertexOffsets[] = {0};
     vkCmdBindVertexBuffers(surfaceState.commandBuffer, 0, 1, &surfaceState.vertexBuffer, vertexOffsets);
 
+    const bool singleBottomOverlayDraw =
+        directPresent
+        && std::count_if(
+            drawCalls.begin(),
+            drawCalls.end(),
+            [](const DrawCall& drawCall) {
+                return drawCall.drawMode
+                    == kDrawModeDirectOverlay2DBottom;
+            }) == 1;
+    const bool writeCurrentBottomA2BlackMask =
+        singleBottomOverlayDraw
+        && inputs.bottomExactPassiveComp2WhiteConsumerA2;
+    const bool mergeImmediateBottomA2BlackMask =
+        writeCurrentBottomA2BlackMask
+        && surfaceState.bottomComposedCarryValid
+        && surfaceState.bottomComposedCarryWriterGeneration
+            == surfaceState.presentedGeneration
+        && surfaceState.bottomComposedCarryWriterPhase
+            == kComposedCarryWriterPhaseBottomA2BlackMaskAfterRegular;
+    const bool consumeImmediateBottomA2BlackMask =
+        singleBottomOverlayDraw
+        && inputs.bottomExactRegularComp7BlackProducer
+        && surfaceState.bottomComposedCarryValid
+        && surfaceState.bottomComposedCarryWriterGeneration
+            == surfaceState.presentedGeneration
+        && (surfaceState.bottomComposedCarryWriterPhase
+                == kComposedCarryWriterPhaseBottomA2BlackMask
+            || surfaceState.bottomComposedCarryWriterPhase
+                == kComposedCarryWriterPhaseBottomA2BlackMaskAfterOpposite);
+    const bool replayOppositeOwnedBottomA2BlackMask =
+        singleBottomOverlayDraw
+        && inputs.bottomOppositeOwnedPassiveComp2BlackMaskCandidate
+        && surfaceState.bottomComposedCarryValid
+        && surfaceState.bottomComposedCarryWriterGeneration
+            == surfaceState.presentedGeneration
+        && surfaceState.bottomComposedCarryWriterPhase
+            == kComposedCarryWriterPhaseBottomA2BlackMaskAfterRegular;
+
     for (const DrawCall& drawCall : drawCalls)
     {
+        if (drawCall.drawMode < presenterDrawModeCounts.size())
+            presenterDrawModeCounts[drawCall.drawMode]++;
         vkCmdBindDescriptorSets(
             surfaceState.commandBuffer,
             VK_PIPELINE_BIND_POINT_GRAPHICS,
@@ -3616,45 +5291,242 @@ bool VulkanSurfacePresenter::recordSurfaceCommands(
         pushConstants.liveSourceScreenSwap = inputs.liveSourceScreenSwap ? 1u : 0u;
         pushConstants.class4VramStructuredPair = inputs.class4VramStructuredPair ? 1u : 0u;
         pushConstants.class4NoAboveVramStructuredPair = inputs.class4NoAboveVramStructuredPair ? 1u : 0u;
-        pushConstants.class4PreservePackedVramValid = inputs.class4PreservePackedVramValid ? 1u : 0u;
+        pushConstants.class4PackedVramMode = inputs.class4PackedVramMode;
         pushConstants.class4PreservePackedVramScreenSwap = inputs.class4PreservePackedVramScreenSwap ? 1u : 0u;
         pushConstants.topStructuredHandoffNoCurrent3d = inputs.topStructuredHandoffNoCurrent3d ? 1u : 0u;
         pushConstants.bottomStructuredHandoffNoCurrent3d = inputs.bottomStructuredHandoffNoCurrent3d ? 1u : 0u;
         pushConstants.topStructuredHandoffSuppress3d = inputs.topStructuredHandoffSuppress3d ? 1u : 0u;
         pushConstants.bottomStructuredHandoffSuppress3d = inputs.bottomStructuredHandoffSuppress3d ? 1u : 0u;
+        pushConstants.topComposedCarryValid = surfaceState.topComposedCarryValid ? 1u : 0u;
+        pushConstants.bottomComposedCarryValid = surfaceState.bottomComposedCarryValid ? 1u : 0u;
+        pushConstants.topComposedCarryRequired = inputs.directPresentTopComposedCarryRequired ? 1u : 0u;
+        pushConstants.bottomComposedCarryRequired = inputs.directPresentBottomComposedCarryRequired ? 1u : 0u;
+        pushConstants.topPackedDirectRequired = inputs.directPresentTopPackedRequired ? 1u : 0u;
+        pushConstants.bottomPackedDirectRequired = inputs.directPresentBottomPackedRequired ? 1u : 0u;
+        pushConstants.alternatingLive3dPingPong = inputs.alternatingLive3dPingPong ? 1u : 0u;
+        const bool replayImmediatePassiveTopCarry =
+            inputs.topFullRegularComp7BottomPassiveComp2Phase
+            && surfaceState.topComposedCarryWriterGeneration
+                == surfaceState.presentedGeneration
+            && surfaceState.topComposedCarryWriterPhase
+                == kComposedCarryWriterPhaseBottomRegularComp7;
+        const bool replayImmediatePassiveBottomCarry =
+            inputs.topPassiveComp2BottomFullRegularComp7Phase
+            && surfaceState.bottomComposedCarryWriterGeneration
+                == surfaceState.presentedGeneration
+            && surfaceState.bottomComposedCarryWriterPhase
+                == kComposedCarryWriterPhaseTopRegularComp7;
+        pushConstants.packedSpecializationMask =
+            (inputs.topSlotHasResolved2DUnderVramPair ? 1u : 0u)
+            | (inputs.bottomSlotHasResolved2DUnderVramPair ? 2u : 0u)
+            | (inputs.bottomDominantRegularCaptureUsesComposedCarry ? 4u : 0u)
+            | (inputs.topResolvedComp7BeforeExactBottomRegularStoresFullCarry ? 8u : 0u)
+            | (inputs.topOpaqueComp7AfterExactBottomRegularUsesComposedCarry ? 16u : 0u)
+            | (inputs.bottomExactRegularCapturePreservesCurrentBlack ? 32u : 0u)
+            | (inputs.bottomEmptyPackedPreservesBlackUnderOppositeRegularCapture ? 64u : 0u)
+            | (inputs.bottomAlternatingRegularComp3StoresFullCarry ? 128u : 0u)
+            | (inputs.bottomEmptyComp3UsesFullCarry ? 256u : 0u)
+            | (inputs.topRegularComp3OverlayPreservesCurrentBlack ? 512u : 0u)
+            | (inputs.exactBottomObjPresenterValid ? 1024u : 0u)
+            | (bottomComp2OneShotStore ? 2048u : 0u)
+            | (bottomComp2OneShotConsume ? 4096u : 0u)
+            | (inputs.topAlternatingMixedRegularComp23UsesComposedCarry ? 8192u : 0u)
+            | (replayImmediatePassiveTopCarry ? 16384u : 0u)
+            | (inputs.topPassiveComp2BottomFullRegularComp7Phase ? 32768u : 0u)
+            | (inputs.topFullRegularComp7BottomPassiveComp2Producer ? 65536u : 0u)
+            | (replayImmediatePassiveBottomCarry ? 131072u : 0u)
+            | (inputs.suppressPreviousTop3dOnZeroLineReentry ? 262144u : 0u)
+            | (consumeImmediateBottomA2BlackMask ? 524288u : 0u)
+            | (writeCurrentBottomA2BlackMask
+                ? 1048576u
+                : 0u)
+            | (replayOppositeOwnedBottomA2BlackMask ? 2097152u : 0u)
+            | (mergeImmediateBottomA2BlackMask ? 4194304u : 0u)
+            | (bottomClass4OneShotCarryWriter ? 8388608u : 0u)
+            | (bottomClass4OneShotCarryConsumer ? 16777216u : 0u)
+            | ((bottomClass4OneShotOverlaySource
+                    || bottomClass4OneShotOverlayMerge)
+                ? 33554432u
+                : 0u)
+            | (bottomClass4OneShotOverlayBridge ? 67108864u : 0u);
+        pushConstants.suppressLateFinalBlackHistoryMask = inputs.suppressLateFinalBlackHistoryMask;
         pushConstants.viewportWidth = drawCall.viewportWidth;
         pushConstants.viewportHeight = drawCall.viewportHeight;
-        if (MelonDSAndroid::areRendererDebugBgObjLogsEnabled())
+        if (MelonDSAndroid::areRendererDebugBgObjLogsEnabled()
+            && drawDebugLogsRemaining > 0
+            && drawCall.drawMode >= 9u
+            && drawCall.drawMode <= 20u)
         {
+            drawDebugLogsRemaining--;
             melonDS::Platform::Log(
-                melonDS::Platform::LogLevel::Info,
-                "VulkanPresenter[Draw]: surface=%d drawMode=%u first=%u count=%u scale=%u renderer=%ux%u packedStride=%u screenSwap=%u prevTop=%u prevBottom=%u capture=%u",
+                melonDS::Platform::LogLevel::Warn,
+                "VulkanPresenter[Draw]: surface=%d drawMode=%u scale=%u screenSwap=%u liveSwap=%u prevTop=%u prevBottom=%u cap=%u capSwapValid=%u capSwap=%u pingPong=%u special=%u carryTop(valid=%u req=%u) carryBottom(valid=%u req=%u)",
                 surfaceState.id,
                 drawCall.drawMode,
-                drawCall.firstVertex,
-                drawCall.vertexCount,
                 pushConstants.scale,
-                pushConstants.rendererWidth,
-                pushConstants.rendererHeight,
-                pushConstants.packedStride,
                 pushConstants.screenSwap,
+                pushConstants.liveSourceScreenSwap,
                 pushConstants.previousTopSourceValid,
                 pushConstants.previousBottomSourceValid,
-                pushConstants.captureSourceValid
+                pushConstants.captureSourceValid,
+                pushConstants.captureSourceScreenSwapValid,
+                pushConstants.captureSourceScreenSwap,
+                pushConstants.alternatingLive3dPingPong,
+                pushConstants.packedSpecializationMask,
+                pushConstants.topComposedCarryValid,
+                pushConstants.topComposedCarryRequired,
+                pushConstants.bottomComposedCarryValid,
+                pushConstants.bottomComposedCarryRequired
             );
         }
-        vkCmdPushConstants(
-            surfaceState.commandBuffer,
-            pipelineLayout,
-            VK_SHADER_STAGE_FRAGMENT_BIT,
-            0,
-            sizeof(pushConstants),
-            &pushConstants
-        );
+        if (fastPathProfile)
+        {
+            vkCmdPushConstants(
+                surfaceState.commandBuffer,
+                pipelineLayout,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(pushConstants),
+                &pushConstants
+            );
+        }
+        else
+        {
+            const CompatibilityPresenterPushConstants compatibilityPushConstants{
+                .drawMode = pushConstants.drawMode,
+                .scale = pushConstants.scale,
+                .rendererWidth = pushConstants.rendererWidth,
+                .rendererHeight = pushConstants.rendererHeight,
+                .packedStride = pushConstants.packedStride,
+                .screenSwap = pushConstants.screenSwap,
+                .filtering = pushConstants.filtering,
+                .previousTopSourceValid = pushConstants.previousTopSourceValid,
+                .previousBottomSourceValid = pushConstants.previousBottomSourceValid,
+                .captureSourceValid = pushConstants.captureSourceValid,
+                .captureSourceScreenSwapValid = pushConstants.captureSourceScreenSwapValid,
+                .captureSourceScreenSwap = pushConstants.captureSourceScreenSwap,
+                .liveSourceScreenSwap = pushConstants.liveSourceScreenSwap,
+                .class4VramStructuredPair = pushConstants.class4VramStructuredPair,
+                .class4NoAboveVramStructuredPair = pushConstants.class4NoAboveVramStructuredPair,
+                .class4PreservePackedVramValid =
+                    inputs.class4PreservePackedVramValid ? 1u : 0u,
+                .class4PreservePackedVramScreenSwap =
+                    pushConstants.class4PreservePackedVramScreenSwap,
+                .topStructuredHandoffNoCurrent3d =
+                    pushConstants.topStructuredHandoffNoCurrent3d,
+                .bottomStructuredHandoffNoCurrent3d =
+                    pushConstants.bottomStructuredHandoffNoCurrent3d,
+                .topStructuredHandoffSuppress3d =
+                    pushConstants.topStructuredHandoffSuppress3d,
+                .bottomStructuredHandoffSuppress3d =
+                    pushConstants.bottomStructuredHandoffSuppress3d,
+                .viewportWidth = pushConstants.viewportWidth,
+                .viewportHeight = pushConstants.viewportHeight,
+            };
+            vkCmdPushConstants(
+                surfaceState.commandBuffer,
+                pipelineLayout,
+                VK_SHADER_STAGE_FRAGMENT_BIT,
+                0,
+                sizeof(compatibilityPushConstants),
+                &compatibilityPushConstants
+            );
+        }
         vkCmdDraw(surfaceState.commandBuffer, drawCall.vertexCount, 1, drawCall.firstVertex, 0);
     }
 
     vkCmdEndRenderPass(surfaceState.commandBuffer);
+
+    for (const DrawCall& drawCall : drawCalls)
+    {
+        switch (drawCall.drawMode)
+        {
+            case kDrawModeTopScreen:
+            case kDrawModeCompositeTop:
+            case kDrawModeFilteredCompositeTop:
+            case kDrawModeDirectHighresCarryTop:
+                if (((!directPresent || !inputs.directPresentTopCarryRequired)
+                        || drawCall.drawMode == kDrawModeDirectHighresCarryTop)
+                    && surfaceState.topComposedCarry.image != VK_NULL_HANDLE)
+                {
+                    surfaceState.topComposedCarryValid = true;
+                    surfaceState.pendingTopComposedCarryWritten = true;
+                    surfaceState.pendingTopComposedCarryWriterPhase =
+                        kComposedCarryWriterPhaseNone;
+                }
+                break;
+            case kDrawModeBottomScreen:
+            case kDrawModeCompositeBottom:
+            case kDrawModeFilteredCompositeBottom:
+            case kDrawModeDirectHighresCarryBottom:
+                if (((!directPresent || !inputs.directPresentBottomCarryRequired)
+                        || drawCall.drawMode == kDrawModeDirectHighresCarryBottom)
+                    && surfaceState.bottomComposedCarry.image != VK_NULL_HANDLE)
+                {
+                    surfaceState.bottomComposedCarryValid = true;
+                    surfaceState.pendingBottomComposedCarryWritten = true;
+                    surfaceState.pendingBottomComposedCarryWriterPhase =
+                        kComposedCarryWriterPhaseNone;
+                }
+                break;
+            case kDrawModeDirectOverlay2DTop:
+            case kDrawModeDirectOverlay2DOnlyTop:
+            case kDrawModeDirectOverlay2DOnlyTopPlane0:
+            case kDrawModeDirectOverlay2DOnlyTopPlane1:
+                if (surfaceState.topComposedCarry.image != VK_NULL_HANDLE)
+                {
+                    surfaceState.topComposedCarryValid = true;
+                    if (drawCall.drawMode == kDrawModeDirectOverlay2DTop
+                        || drawCall.drawMode
+                            == kDrawModeDirectOverlay2DOnlyTop)
+                    {
+                        surfaceState.pendingTopComposedCarryWritten = true;
+                        surfaceState.pendingTopComposedCarryWriterPhase =
+                            drawCall.drawMode == kDrawModeDirectOverlay2DTop
+                            ? (inputs.topFullRegularComp7BottomPassiveComp2Phase
+                                ? kComposedCarryWriterPhaseTopRegularComp7
+                                : (inputs.topPassiveComp2BottomFullRegularComp7Phase
+                                    ? kComposedCarryWriterPhaseBottomRegularComp7
+                                    : kComposedCarryWriterPhaseNone))
+                            : kComposedCarryWriterPhaseNone;
+                    }
+                }
+                break;
+            case kDrawModeDirectOverlay2DBottom:
+            case kDrawModeDirectOverlay2DOnlyBottom:
+            case kDrawModeDirectOverlay2DOnlyBottomPlane0:
+            case kDrawModeDirectOverlay2DOnlyBottomPlane1:
+                if (surfaceState.bottomComposedCarry.image != VK_NULL_HANDLE)
+                {
+                    surfaceState.bottomComposedCarryValid = true;
+                    if (drawCall.drawMode == kDrawModeDirectOverlay2DBottom
+                        || (drawCall.drawMode
+                                == kDrawModeDirectOverlay2DOnlyBottom
+                            && !bottomComp2OneShotConsume))
+                    {
+                        surfaceState.pendingBottomComposedCarryWritten = true;
+                        surfaceState.pendingBottomComposedCarryWriterPhase =
+                            drawCall.drawMode
+                                == kDrawModeDirectOverlay2DBottom
+                            ? (writeCurrentBottomA2BlackMask
+                                ? kComposedCarryWriterPhaseBottomA2BlackMask
+                                : (replayOppositeOwnedBottomA2BlackMask
+                                    ? kComposedCarryWriterPhaseBottomA2BlackMaskAfterOpposite
+                                    : (consumeImmediateBottomA2BlackMask
+                                        ? kComposedCarryWriterPhaseBottomA2BlackMaskAfterRegular
+                                        : (inputs.topFullRegularComp7BottomPassiveComp2Producer
+                                            ? kComposedCarryWriterPhaseTopRegularComp7
+                                            : (inputs.topPassiveComp2BottomFullRegularComp7Phase
+                                                ? kComposedCarryWriterPhaseBottomRegularComp7
+                                                : kComposedCarryWriterPhaseNone)))))
+                            : kComposedCarryWriterPhaseNone;
+                    }
+                }
+                break;
+            default:
+                break;
+        }
+    }
 
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE)
         vkCmdWriteTimestamp(surfaceState.commandBuffer, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, surfaceState.timestampQueryPool, 1);
@@ -3666,9 +5538,13 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
     SurfaceState& surfaceState,
     u32 imageIndex,
     u64& presentCpuNs,
-    u64& presentTimelineValueOut)
+    u64& presentTimelineValueOut,
+    bool& queueSubmitSucceededOut,
+    bool& presentAcceptedOut)
 {
     presentTimelineValueOut = 0;
+    queueSubmitSucceededOut = false;
+    presentAcceptedOut = false;
     VkPipelineStageFlags waitStages[] = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
 
     VkSubmitInfo submitInfo{};
@@ -3736,6 +5612,10 @@ bool VulkanSurfacePresenter::submitSurfaceCommands(
         );
         return false;
     }
+    queueSubmitSucceededOut = true;
+    presentAcceptedOut =
+        presentResult == VK_SUCCESS
+        || presentResult == VK_SUBOPTIMAL_KHR;
 
     if (surfaceState.timestampQueryPool != VK_NULL_HANDLE)
         surfaceState.timestampPending = true;

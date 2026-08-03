@@ -304,6 +304,11 @@
     <string name="threaded_rendering">Threaded rendering</string>
     <string name="fps_counter_position">FPS counter position</string>
     <string name="threaded_rendering_summary">Improves performance on 3D games when enabled but may cause graphical glitches.</string>
+    <string name="video_vulkan_fastpath_enabled" tools:ignore="MissingTranslation">Enable Vulkan FastPath</string>
+    <string name="video_vulkan_fastpath_enabled_summary" tools:ignore="MissingTranslation">Experimental feature. It may cause graphical glitches, stale or incorrect frames, or stability issues in some games.</string>
+    <string name="video_vulkan_fastpath_warning_title" tools:ignore="MissingTranslation">Enable experimental Vulkan FastPath?</string>
+    <string name="video_vulkan_fastpath_warning_message" tools:ignore="MissingTranslation">Vulkan FastPath may cause graphical glitches, stale or incorrect frames, or stability issues in some games.</string>
+    <string name="video_vulkan_fastpath_enable_action" tools:ignore="MissingTranslation">Enable FastPath</string>
     <string name="video_hacks">Video Hacks</string>
     <string name="video_renderer_debug_tools_enabled">Renderer debug tools</string>
     <string name="video_renderer_debug_tools_enabled_summary">Enables renderer snapshots, parity captures and performance/debug logs in release builds.</string>

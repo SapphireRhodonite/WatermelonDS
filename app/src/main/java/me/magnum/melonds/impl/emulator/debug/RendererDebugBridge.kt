@@ -132,8 +132,14 @@ internal object RendererDebugBridge {
     external fun getCurrentFrameIndexForDebug(): Int
     external fun requestPreparedRendererSnapshot()
     external fun clearPreparedRendererSnapshot()
-    external fun startDenseScreenBurstCapture(frameCount: Int, stepFrames: Int, captureKindsMask: Int)
+    external fun startDenseScreenBurstCapture(
+        frameCount: Int,
+        stepFrames: Int,
+        warmupFrames: Int,
+        captureKindsMask: Int,
+    )
     external fun isDenseScreenBurstCaptureComplete(): Boolean
+    external fun getDenseScreenBurstScheduleStats(): IntArray?
     external fun getDenseScreenBurstCaptureFrameCount(): Int
     external fun getDenseScreenBurstCaptureFrameId(index: Int): Int
     external fun getDenseScreenBurstCaptureFrame(index: Int): IntArray?

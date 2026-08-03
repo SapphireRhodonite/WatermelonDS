@@ -159,6 +159,11 @@ namespace MelonDSAndroid {
     extern bool areRendererDebugToolsEnabled();
     extern bool areRendererDebugBgObjLogsEnabled();
     extern bool areRendererDebugLatchTraceLogsEnabled();
+    extern bool isVulkanPerfLoggingEnabled();
+    extern bool isVulkanGpu2DPerfLoggingEnabled();
+    extern bool isVulkanLatchPerfLoggingEnabled();
+    extern bool isVulkanAsyncFrameTailEnabled();
+    extern bool isVulkanSetupPerfLoggingEnabled();
     extern Renderer2DDebugControlState getRenderer2DDebugControls();
     extern void setRenderer2DDebugControls(
         int mainForcedMode,
@@ -212,8 +217,9 @@ namespace MelonDSAndroid {
     extern int getCurrentFrameIndexForDebug();
     extern void requestPreparedRendererDebugSnapshot();
     extern void clearPreparedRendererDebugSnapshot();
-    extern void startDenseScreenBurstCaptureForDebug(int frameCount, int stepFrames, u32 captureKindsMask);
+    extern void startDenseScreenBurstCaptureForDebug(int frameCount, int stepFrames, int warmupFrames, u32 captureKindsMask);
     extern bool isDenseScreenBurstCaptureCompleteForDebug();
+    extern std::vector<u32> getDenseScreenBurstScheduleStatsForDebug();
     extern int getDenseScreenBurstCaptureFrameCountForDebug();
     extern int getDenseScreenBurstCaptureFrameIdForDebug(int index);
     extern std::vector<u32> getDenseScreenBurstCaptureFrameForDebug(int index);

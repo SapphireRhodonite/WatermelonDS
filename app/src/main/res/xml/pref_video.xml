@@ -12,6 +12,13 @@
             android:entryValues="@array/video_renderer_values"
             android:defaultValue="software"/>
 
+    <me.magnum.melonds.ui.settings.preferences.InGameLockedSwitchPreference
+            android:key="video_vulkan_fastpath_enabled"
+            android:title="@string/video_vulkan_fastpath_enabled"
+            android:summary="@string/video_vulkan_fastpath_enabled_summary"
+            app:iconSpaceReserved="false"
+            android:defaultValue="false" />
+
     <me.magnum.melonds.ui.settings.preferences.InGameLockedListPreference
             android:key="video_internal_resolution"
             android:title="@string/internal_resolution"

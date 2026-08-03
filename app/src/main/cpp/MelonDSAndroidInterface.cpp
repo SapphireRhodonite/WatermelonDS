@@ -411,7 +411,8 @@ bool isVulkanRendererSupported()
     return result;
 }
 
-bool canInitializeVulkanRenderer()
+bool canInitializeVulkanRenderer(
+    melonDS::VulkanPipelineProfile pipelineProfile)
 {
     constexpr u64 kQuickValidationWaitTimeoutNs = 1'000'000'000ull;
     if (!isVulkanRendererSupported())
@@ -423,7 +424,8 @@ bool canInitializeVulkanRenderer()
         return false;
     }
 
-    MelonDSAndroid::VulkanOutput vulkanOutput;
+    MelonDSAndroid::VulkanOutput vulkanOutput(
+        pipelineProfile);
     if (!vulkanOutput.init())
     {
         melonDS::Platform::Log(melonDS::Platform::LogLevel::Error, "canInitializeVulkanRenderer: VulkanOutput::init failed");
@@ -538,9 +540,18 @@ Java_me_magnum_melonds_MelonDSAndroidInterface_getRendererCapabilities(JNIEnv* e
 }
 
 JNIEXPORT jboolean JNICALL
-Java_me_magnum_melonds_MelonDSAndroidInterface_canInitializeVulkanRendererNative(JNIEnv* env, jobject thiz)
+Java_me_magnum_melonds_MelonDSAndroidInterface_canInitializeVulkanRendererForProfileNative(
+    JNIEnv* env,
+    jobject thiz,
+    jboolean fastPathEnabled)
 {
-    return canInitializeVulkanRenderer() ? JNI_TRUE : JNI_FALSE;
+    const melonDS::VulkanPipelineProfile pipelineProfile =
+        fastPathEnabled == JNI_TRUE
+        ? melonDS::VulkanPipelineProfile::FastPath
+        : melonDS::VulkanPipelineProfile::Compatibility;
+    return canInitializeVulkanRenderer(pipelineProfile)
+        ? JNI_TRUE
+        : JNI_FALSE;
 }
 
 JNIEXPORT void JNICALL
