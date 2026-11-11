@@ -87,6 +87,7 @@ class NdzRomFileProcessor(private val context: Context, private val uriHandler: 
             lastPlayed = null,
             isDsiWareTitle = metadata.isDSiWareTitle,
             retroAchievementsHash = metadata.retroAchievementsHash,
+            cartridge = metadata.cartridge,
         )
     }
 

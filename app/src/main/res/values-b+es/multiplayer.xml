@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="multiplayer_title">Multijugador</string>
+    <string name="multiplayer_back">Volver</string>
+    <string name="multiplayer_direct_failed">No se pudo crear la sala directa. Revisa el Wi‑Fi y cierra cualquier otro grupo Wi‑Fi Direct. Esta consola debe admitir un grupo de 5 GHz.</string>
+    <string name="multiplayer_direct_stop_failed">No se pudo confirmar que la red directa se cerró. Revisa el Wi‑Fi en los ajustes de Android.</string>
+    <string name="multiplayer_finish_game">Sal del juego antes de cambiar la conexión multijugador.</string>
+    <string name="multiplayer_connection_failed">No se pudo conectar. Comprueba que el Wi-Fi esté encendido y que la sala Direct siga abierta.</string>
+    <string name="multiplayer_operation_unavailable">Los estados guardados y el avance rápido no están disponibles en multijugador local.</string>
+    <string name="multiplayer_interrupted_message">La conexión multijugador se cerró porque el juego estuvo en pausa 3 segundos. Sal del juego y vuelve a entrar a la sala para seguir jugando.</string>
+
+    <string name="mp_create_title">Crear sala</string>
+    <string name="mp_code_title">Código</string>
+    <string name="mp_nearby">Salas cercanas</string>
+    <string name="mp_searching">Buscando…</string>
+    <string name="mp_nearby_empty">Aún no hay salas cerca. Pide el código al anfitrión o crea tu propia sala.</string>
+    <string name="mp_room_of">Sala de %1$s</string>
+    <string name="mp_invite_title">%1$s abrió una sala cerca</string>
+    <string name="mp_join">Unirse</string>
+    <string name="mp_hint_create">Crear</string>
+    <string name="mp_hint_library">Biblioteca</string>
+    <string name="mp_profile_cd">Tu perfil DS: %1$s</string>
+
+    <string name="mp_play_rom">Todos con el juego</string>
+    <string name="mp_play_download">Descarga DS</string>
+    <string name="mp_play_chat">PictoChat</string>
+    <string name="mp_play_rom_desc">Cada consola abre su copia del mismo juego.</string>
+    <string name="mp_play_download_desc">Sólo tú tienes el juego. Los demás lo reciben.</string>
+    <string name="mp_play_chat_desc">Chatea y dibuja. Nadie necesita un juego.</string>
+    <string name="mp_how_play">¿Cómo van a jugar?</string>
+    <string name="mp_pick_game">Elige el juego</string>
+    <string name="mp_no_games">Tu biblioteca aún no tiene juegos de DS.</string>
+    <string name="mp_filter_recent">RECIENTES</string>
+    <string name="mp_filter_all">TODOS</string>
+    <string name="mp_net_direct">Sala directa</string>
+    <string name="mp_hint_choose">Elegir</string>
+    <string name="mp_next">Siguiente</string>
+    <string name="mp_direct_permission">Android necesita el permiso de dispositivos cercanos para abrir una sala directa.</string>
+    <string name="mp_open_room">Abrir sala</string>
+    <string name="mp_save_game">Guardar</string>
+
+    <string name="mp_tag_direct">DIRECTA</string>
+    <string name="mp_tag_wifi">WI‑FI</string>
+    <string name="mp_tag_host">ANFITRIÓN</string>
+    <string name="mp_tag_connecting">CONECTANDO</string>
+    <string name="mp_tag_left">SE DESCONECTÓ</string>
+    <string name="mp_tag_you">TÚ</string>
+    <string name="mp_tag_ping">%1$d MS</string>
+    <string name="mp_tag_in_game">JUGANDO</string>
+    <string name="mp_free">Libre</string>
+    <string name="mp_tag_waiting">ESPERANDO</string>
+    <string name="mp_code_label">CÓDIGO</string>
+    <string name="mp_code_for">para unirse</string>
+    <string name="mp_game_change">%1$s · Cambiar</string>
+    <string name="mp_game_pick">Elige un juego</string>
+    <string name="mp_start">Iniciar · %1$d</string>
+    <string name="mp_waiting">Esperando…</string>
+    <string name="mp_hint_game">Juego</string>
+    <string name="mp_hint_close">Cerrar</string>
+    <string name="mp_hint_details">Detalles</string>
+    <string name="mp_joined">%1$s entró</string>
+    <string name="mp_left">%1$s se desconectó</string>
+    <string name="mp_details">Detalles de la sala</string>
+    <string name="mp_details_body">Si una consola no puede unirse sola, conéctala a esta red en el Wi‑Fi de Android y únete por IP.</string>
+    <string name="mp_close_title">¿Cerrar la sala?</string>
+    <string name="mp_close_body">Todos los de la sala se desconectarán.</string>
+    <string name="mp_close_room">Cerrar sala</string>
+    <string name="mp_keep_open">Dejarla abierta</string>
+    <string name="mp_stay">Quedarme</string>
+    <string name="mp_leave_title">¿Salir de la sala?</string>
+    <string name="mp_leave_body">Puedes volver a entrar con el código mientras la sala siga abierta.</string>
+    <string name="mp_leave">Salir</string>
+    <string name="mp_duplicate">Ya hay otro «%1$s». Cambia tu nombre DS para no confundirlos.</string>
+    <string name="mp_have_game">Lo tienes · se abrirá cuando %1$s inicie</string>
+    <string name="mp_open_now">Abrir ya</string>
+    <string name="mp_missing_game">Este juego no está en tu biblioteca.</string>
+    <string name="mp_download_guest">Lo recibirás con Descarga DS</string>
+    <string name="mp_chat_guest">Abre PictoChat desde el menú de la DS</string>
+    <string name="mp_waiting_host">Esperando a que %1$s elija el juego</string>
+    <string name="mp_pause_warning">Pausar más de 3 s corta la conexión</string>
+    <string name="mp_host_closed">El anfitrión cerró la sala.</string>
+    <string name="mp_hint_open">Abrir juego</string>
+    <string name="mp_hint_leave">Salir</string>
+    <string name="mp_bios_needed">Necesita BIOS y firmware de DS · Configurar</string>
+
+    <string name="mp_join_title">Unirse a una sala</string>
+    <string name="mp_tab_code">CÓDIGO</string>
+    <string name="mp_tab_ip">IP</string>
+    <string name="mp_code_hint">Escribe el código que ves en la sala del anfitrión.</string>
+    <string name="mp_code_missing">No hay ninguna sala cerca con ese código.</string>
+    <string name="mp_enter">Entrar</string>
+    <string name="mp_ip_hint">Úsalo si la sala no aparece sola. El anfitrión ve su IP en «Detalles de la sala».</string>
+    <string name="mp_ip_label">IP del anfitrión</string>
+    <string name="mp_hint_type">Escribir</string>
+    <string name="mp_hint_erase">Borrar</string>
+
+    <string name="mp_entering">Entrando a la %1$s</string>
+    <string name="mp_you">Tú</string>
+    <string name="mp_found">Sala encontrada</string>
+    <string name="mp_joining_network">Uniéndote a la red de %1$s</string>
+    <string name="mp_joining_network_sub">Sin contraseñas. Tu Wi‑Fi de siempre sigue conectado.</string>
+    <string name="mp_entering_room">Entrando a la sala</string>
+    <string name="mp_cancel">Cancelar</string>
+
+    <string name="mp_fail_title">No pudimos entrar solos</string>
+    <string name="mp_fail_closer">Acércate a la consola de %1$s.</string>
+    <string name="mp_fail_wifi">Revisa que el Wi‑Fi esté encendido.</string>
+    <string name="mp_fail_plan_b">Algunas consolas no dejan unirse solas. Usa el plan B.</string>
+    <string name="mp_retry">Reintentar</string>
+    <string name="mp_plan_b">PLAN B · ENTRAR A MANO</string>
+    <string name="mp_plan_b_body">En el Wi‑Fi de Android elige esta red, escribe la contraseña y vuelve:</string>
+    <string name="mp_network">Red</string>
+    <string name="mp_password">Contraseña</string>
+    <string name="mp_open_wifi">Abrir Wi‑Fi de Android</string>
+    <string name="mp_join_ip">Ya me conecté · Entrar</string>
+
+    <string name="mp_perm_title">Juega con consolas cerca</string>
+    <string name="mp_perm_body">Android te pedirá «%1$s». WatermelonDS sólo lo usa para las salas.</string>
+    <string name="mp_continue">Continuar</string>
+    <string name="mp_not_now">Ahora no</string>
+    <string name="mp_perm_without">Se requiere el permiso de dispositivos cercanos para entrar o crear una sala Direct.</string>
+
+    <string name="mp_profile_title">Perfil DS</string>
+    <string name="mp_profile_sub">Lo ven las salas y los juegos</string>
+    <string name="mp_message">Mensaje</string>
+    <string name="mp_birthday">Cumpleaños</string>
+    <string name="mp_colour">Color favorito</string>
+    <string name="mp_symbol">Símbolo</string>
+    <string name="mp_save">Guardar</string>
+    <string name="mp_profile_firmware_note">El menú de la DS y PictoChat usan el nombre guardado en tu propio firmware de DS.</string>
+    <string name="mp_profile_room_note">El nombre nuevo se usa la próxima vez que entres a una sala.</string>
+    <string name="mp_hint_colour">Color</string>
+    <string-array name="mp_colour_names">
+        <item>Gris</item>
+        <item>Café</item>
+        <item>Rojo</item>
+        <item>Rosa</item>
+        <item>Naranja</item>
+        <item>Amarillo</item>
+        <item>Lima</item>
+        <item>Verde</item>
+        <item>Verde oscuro</item>
+        <item>Turquesa</item>
+        <item>Celeste</item>
+        <item>Azul</item>
+        <item>Azul oscuro</item>
+        <item>Morado</item>
+        <item>Violeta</item>
+        <item>Fucsia</item>
+    </string-array>
+    <string-array name="mp_symbol_names">
+        <item>Inicial</item>
+        <item>Estrella</item>
+        <item>Corazón</item>
+        <item>Nota</item>
+        <item>Rayo</item>
+        <item>Luna</item>
+        <item>Corona</item>
+        <item>Carita</item>
+        <item>Flor</item>
+        <item>Hoja</item>
+        <item>Diamante</item>
+        <item>Mando</item>
+    </string-array>
+    <string-array name="mp_months">
+        <item>enero</item>
+        <item>febrero</item>
+        <item>marzo</item>
+        <item>abril</item>
+        <item>mayo</item>
+        <item>junio</item>
+        <item>julio</item>
+        <item>agosto</item>
+        <item>septiembre</item>
+        <item>octubre</item>
+        <item>noviembre</item>
+        <item>diciembre</item>
+    </string-array>
+    <string name="mp_back_room">Volver a la sala</string>
+    <string name="mp_birthday_value">%1$d de %2$s</string>
+    <string name="mp_change_name">Cambiar nombre</string>
+    <string name="mp_each_needs">LO QUE NECESITA CADA CONSOLA</string>
+    <string name="mp_enter_code">Poner código</string>
+    <string name="mp_filter_favorites">★ FAVORITOS</string>
+    <string name="mp_first_time">PRIMERA VEZ</string>
+    <string name="mp_hint_choose_next">Elegir · otra vez: seguir</string>
+    <string name="mp_hint_code_ip">Código / IP</string>
+    <string name="mp_hint_edit">Editar</string>
+    <string name="mp_hint_letter">Letra</string>
+    <string name="mp_host_ip">IP del anfitrión</string>
+    <string name="mp_max">MÁX %1$d</string>
+    <string name="mp_meta_chat">Hasta 16 jugadores · Menú DS</string>
+    <string name="mp_meta_chat_locked">Necesita tu BIOS y firmware de DS · Configurar</string>
+    <string name="mp_meta_download">Hasta 8 jugadores · Los invitados necesitan BIOS DS</string>
+    <string name="mp_meta_rom">Hasta 8 jugadores · Sin BIOS</string>
+    <string name="mp_name">Nombre</string>
+    <string name="mp_need_menu">MENÚ DS</string>
+    <string name="mp_need_receives">RECIBE</string>
+    <string name="mp_net_wifi">Sala Wi‑Fi</string>
+    <string name="mp_notice">AVISO</string>
+    <string name="mp_notice_name">MISMO NOMBRE</string>
+    <string name="mp_perm_direct">Abrir una sala directa sin contraseñas</string>
+    <string name="mp_perm_direct_sub">Tu Wi‑Fi sigue conectado</string>
+    <string name="mp_perm_find">Encontrar salas a tu alrededor</string>
+    <string name="mp_perm_find_sub">Sólo mientras estás en Multijugador</string>
+    <string name="mp_perm_location">Ubicación</string>
+    <string name="mp_perm_nearby">Dispositivos cercanos</string>
+    <string name="mp_perm_private">Sin internet</string>
+    <string name="mp_perm_private_sub">Nunca lee tu ubicación</string>
+    <string name="mp_perm_radar">TÚ · CONSOLAS CERCA</string>
+    <string name="mp_plan_step_back">Vuelve · Unirse por IP %1$s</string>
+    <string name="mp_plan_step_pick">Elige %1$s y escribe la contraseña</string>
+    <string name="mp_plan_step_wifi">Abre el Wi‑Fi de Android (Y)</string>
+    <string name="mp_players_of">%1$d/%2$d JUGADORES</string>
+    <string name="mp_search_empty">Ningún juego coincide con la búsqueda.</string>
+    <string name="mp_search_games">Buscar en %1$d juegos</string>
+    <string name="mp_step_mode">MODO</string>
+    <string name="mp_step_of">PASO %1$d/%2$d</string>
+    <string name="mp_tag_download">DESCARGA</string>
+    <string name="mp_tag_not_connected">SIN CONECTAR</string>
+    <string name="mp_wifi_short">Wi‑Fi de Android</string>
+    <plurals name="mp_count_favorites">
+        <item quantity="one">%d favorito</item>
+        <item quantity="other">%d favoritos</item>
+    </plurals>
+    <plurals name="mp_count_found">
+        <item quantity="one">%d encontrado</item>
+        <item quantity="other">%d encontrados</item>
+    </plurals>
+    <plurals name="mp_count_games">
+        <item quantity="one">%d juego</item>
+        <item quantity="other">%d juegos</item>
+    </plurals>
+    <plurals name="mp_count_recent">
+        <item quantity="one">%d reciente</item>
+        <item quantity="other">%d recientes</item>
+    </plurals>
+    <plurals name="mp_rooms">
+        <item quantity="one">%d sala</item>
+        <item quantity="other">%d salas</item>
+    </plurals>
+    <string name="mp_hint_symbol">Símbolo</string>
+    <string name="mp_hint_profile">Perfil</string>
+    <string name="mp_filter_library">Biblioteca</string>
+    <string name="mp_show_all">Mostrar todos</string>
+    <string name="mp_reading_headers">Leyendo cabeceras de cartucho…</string>
+    <string name="mp_no_games_for_mode">Ningún juego coincide. Usa Mostrar todos para ver tu biblioteca.</string>
+    <string name="mp_wfc_mode_unconfirmed">WFC · modo local sin confirmar</string>
+    <string name="mp_mode_unconfirmed">Modo sin confirmar</string>
+    <string name="mp_selection_changed">El cartucho seleccionado cambió. Elige un juego de la lista.</string>
+</resources>

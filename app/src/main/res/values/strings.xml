@@ -38,6 +38,7 @@
     <string name="size_gb">GB</string>
 
     <string name="error_rom_not_found">Could not find ROM</string>
+    <string name="rom_metadata_unavailable">Could not read this game. Check that the file is accessible and contains a valid DS ROM.</string>
     <string name="error_rom_not_found_info">The ROM you have selected has not been found. Make sure the selected ROM can be found in the current ROM search directory.\n%1$s</string>
     <string name="error_load_rom">Could not load ROM</string>
     <string name="error_load_rom_message">There was a problem loading the ROM. Make sure it\'s not corrupted and try again.</string>
@@ -143,6 +144,7 @@
     <string name="no_image_selected">No image selected</string>
     <string name="failed_to_load_image">Failed to load image</string>
     <string name="emulator_stop_gba_mode_unsupported">GBA mode is not supported</string>
+    <string name="emulator_stop_wireless_unsupported">This wireless mode is not supported in this multiplayer room.</string>
     <string name="emulator_stop_internal_error">An error was encountered during the ROM\'s execution</string>
 
     <string name="action_sort_alphabetically">Alphabetically</string>
@@ -1011,6 +1013,13 @@
     <string name="video_retroarch_shader_root_title">RetroArch shader root</string>
     <string name="video_retroarch_shader_root_summary">Select the top-level slang-shaders folder so presets can resolve sibling shader, include, and LUT folders.</string>
     <string name="video_retroarch_shader_preset_title">Shader</string>
+    <string name="video_dslite_preset_title">DS Lite presets</string>
+    <string name="video_dslite_preset_summary">DS Lite colors with optional LCD grid and motion blur</string>
+    <string name="video_dslite_color">DS Lite color</string>
+    <string name="video_dslite_lcd">DS Lite color + LCD grid</string>
+    <string name="video_dslite_motionblur">DS Lite color + LCD grid + motion blur</string>
+    <string name="video_dslite_download">These presets use the official shader library. Download or update it now?</string>
+    <string name="video_dslite_unavailable">This preset is missing from the installed shader library. Try updating the library.</string>
     <string name="video_retroarch_shader_preset_summary">None selected. Pick one from the shader library.</string>
     <string name="video_retroarch_shader_parameters_title">RetroArch preset parameters</string>
     <string name="video_retroarch_shader_parameters_summary">Optional overrides, for example curvature=0.25,mask_strength=0.6.</string>

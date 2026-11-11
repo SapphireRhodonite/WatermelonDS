@@ -42,6 +42,15 @@ uint outputMode()
         ? kSpecializedOutputMode : pc.modoSalida;
 }
 
+uint nativeFallbackColor(uint index)
+{
+    uint color = d3d[index];
+    if ((pc.escala & 0x10000000u) == 0u)
+        return color;
+    return ((color & 0x003F3F3Fu) << 2u)
+        | ((color & 0x1F000000u) << 3u);
+}
+
 layout(binding = 4, rgba8) uniform readonly image2D img3dEscala;
 
 layout(binding = 8) uniform sampler2D tex3dEscala;
@@ -1497,7 +1506,7 @@ void storeFinalSubpixel(
     }
     if (!capa3dResuelta && (w0 & kB1Needs3d) != 0u)
     {
-        uint native3d = d3d[state.row3d * 256u + state.nativeX];
+        uint native3d = nativeFallbackColor(state.row3d * 256u + state.nativeX);
         a5Resuelto = ((native3d >> 24u) & 0xFFu) >> 3u;
         c3Resuelto = ivec3(int((native3d & 0xFFu) >> 2u),
                            int(((native3d >> 8u) & 0xFFu) >> 2u),
@@ -2188,7 +2197,7 @@ void main()
         }
         if (!capa3dResuelta && (w0 & kB1Needs3d) != 0u)
         {
-            uint native3d = d3d[fila3d * 256u + x];
+            uint native3d = nativeFallbackColor(fila3d * 256u + x);
             a5Resuelto = ((native3d >> 24u) & 0xFFu) >> 3u;
             c3Resuelto = ivec3(int((native3d & 0xFFu) >> 2u),
                                int(((native3d >> 8u) & 0xFFu) >> 2u),
@@ -2298,7 +2307,7 @@ void main()
                 {
                     uint sourceY = reg(eng, linea, 26u);
                     if (sourceY > 191u) sourceY = linea;
-                    uint pixel3d = d3d[sourceY * 256u + x];
+                    uint pixel3d = nativeFallbackColor(sourceY * 256u + x);
                     uint alpha3d = (pixel3d >> 27u) & 0x1Fu;
                     if (alpha3d != 0u)
                     {
@@ -2321,7 +2330,7 @@ void main()
                 {
                     uint f3p = reg(eng, linea, 26u);
                     if (f3p > 191u) f3p = linea;
-                    uint v3p = d3d[f3p * 256u + x];
+                    uint v3p = nativeFallbackColor(f3p * 256u + x);
                     uint a5p = ((v3p >> 24u) & 0xFFu) >> 3u;
                     if (a5p != 0u && (a5p + 1u) < 32u)
                     {
@@ -2505,7 +2514,7 @@ void main()
                 if ((esc == 1u && !materialProjection)
                     || (pc.escala & 0x100u) != 0u)
                 {
-                    uint v = d3d[fila3c * 256u + x];
+                    uint v = nativeFallbackColor(fila3c * 256u + x);
                     a5 = ((v >> 24u) & 0xFFu) >> 3u;
                     c3 = ivec3(int((v & 0xFFu) >> 2u),
                                int(((v >> 8u) & 0xFFu) >> 2u),

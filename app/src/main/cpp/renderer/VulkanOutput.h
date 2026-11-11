@@ -489,7 +489,8 @@ public:
     void releaseTemporalFrameReferences();
     bool releaseTemporalFrameReferencesFor(Frame* frame);
     void markFramePreviousSourcesSubmitted(Frame* frame);
-    bool captureRenderer3dSnapshot(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
+    bool captureRenderer3dSnapshot(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap, bool deferSubmit = false);
+    bool flushRenderer3dSnapshot(Frame* frame);
 
     bool preservePublishedRenderer3dSnapshot(const Frame* frame,
         const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap);
@@ -508,7 +509,8 @@ public:
     void setFaithfulNativeFallbackIdentity(
         u64 renderProductEpoch, u64 sequence, bool gpuBacked);
 
-    [[nodiscard]] bool frameHasOwnRenderer3dSnapshot(const Frame* frame) const;
+    [[nodiscard]] bool frameHasOwnRenderer3dSnapshot(
+        const Frame* frame, bool requireExactNativeProjection = false) const;
 
     [[nodiscard]] melonDS::u32 getRechazosFuente3D() const noexcept { return rechazosFuente3D.load(std::memory_order_relaxed); }
 

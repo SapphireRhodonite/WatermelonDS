@@ -38,6 +38,13 @@
             android:defaultValue="none"/>
 
     <Preference
+            android:key="video_dslite_preset"
+            android:title="@string/video_dslite_preset_title"
+            android:summary="@string/video_dslite_preset_summary"
+            app:iconSpaceReserved="false"
+            android:persistent="false" />
+
+    <Preference
             android:key="video_retroarch_shader_source"
             android:title="@string/video_retroarch_shader_source_title"
             app:iconSpaceReserved="false"

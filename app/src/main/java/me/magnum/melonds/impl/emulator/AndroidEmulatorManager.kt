@@ -17,6 +17,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import me.magnum.melonds.MelonDSAndroidInterface
 import me.magnum.melonds.MelonEmulator
+import me.magnum.melonds.multiplayer.phantom.PhantomPlayer
+import me.magnum.melonds.multiplayer.MultiplayerSession
 import me.magnum.melonds.common.PermissionHandler
 import me.magnum.melonds.common.romprocessors.RomFileProcessorFactory
 import me.magnum.melonds.common.runtime.ScreenshotFrameBufferProvider
@@ -66,6 +68,7 @@ class AndroidEmulatorManager(
         private const val RA_SUBMISSION_TAG = "RASubmission"
         private const val GBAModeNotSupported = 2
         private const val BadExceptionRegion = 3
+        private const val WirelessUnsupported = 5
         private const val PowerOff = 4
     }
 
@@ -328,7 +331,7 @@ class AndroidEmulatorManager(
                 val fileRomProcessor = romFileProcessorFactory.getFileRomProcessorForDocument(fileRomDocument)
                 val romUri = fileRomProcessor?.getRealRomUri(rom) ?: return@withContext RomLaunchResult.LaunchFailedRomNotSupported
                 val sram = try {
-                    sramProvider.getSramForRom(rom)
+                    PhantomPlayer.current?.save ?: sramProvider.getSramForRom(rom)
                 } catch (exception: SramLoadException) {
                     return@withContext RomLaunchResult.LaunchFailedSramProblem(exception)
                 }
@@ -781,7 +784,7 @@ class AndroidEmulatorManager(
             consoleType = consoleType,
             micSource = getRomOptionOrDefault(rom.config.runtimeMicSource, baseConfiguration.micSource),
             dsiWareAutoloadTitleId = rom.installedDsiWareTitleId ?: 0L,
-        ).run { getPermissionAdjustedConfiguration(this) }
+        ).run { getRuntimeAdjustedConfiguration(this) }
     }
 
     private suspend fun getFirmwareEmulatorConfiguration(consoleType: ConsoleType): EmulatorConfiguration {
@@ -790,7 +793,7 @@ class AndroidEmulatorManager(
             useCustomBios = true,
             showBootScreen = true,
             dsiWareAutoloadTitleId = 0L,
-        ).run { getPermissionAdjustedConfiguration(this) }
+        ).run { getRuntimeAdjustedConfiguration(this) }
     }
 
     private fun <T, U> getRomOptionOrDefault(romOption: T, default: U): U where T : RuntimeEnum<T, U> {
@@ -801,14 +804,19 @@ class AndroidEmulatorManager(
         }
     }
 
-    private suspend fun getPermissionAdjustedConfiguration(originalConfiguration: EmulatorConfiguration): EmulatorConfiguration {
-        if (originalConfiguration.micSource == MicSource.DEVICE) {
+    private suspend fun getRuntimeAdjustedConfiguration(originalConfiguration: EmulatorConfiguration): EmulatorConfiguration {
+        val source = PhantomPlayer.current?.configuration(originalConfiguration) ?: originalConfiguration
+        val configuration = source.copy(
+            rendererConfiguration = MultiplayerSession.configureRenderer(originalConfiguration.rendererConfiguration),
+            lowLatencyEnabled = originalConfiguration.lowLatencyEnabled && !MultiplayerSession.active,
+        )
+        if (configuration.micSource == MicSource.DEVICE) {
             if (!permissionHandler.checkPermission(android.Manifest.permission.RECORD_AUDIO)) {
-                return originalConfiguration.copy(micSource = MicSource.NONE)
+                return configuration.copy(micSource = MicSource.NONE)
             }
         }
 
-        return originalConfiguration
+        return configuration
     }
 
     private fun EmulatorConfiguration.withPreparedDldiConfiguration(): EmulatorConfiguration? {
@@ -837,6 +845,7 @@ class AndroidEmulatorManager(
             GBAModeNotSupported -> EmulatorEvent.Stop.Reason.GBAModeNotSupported
             BadExceptionRegion -> EmulatorEvent.Stop.Reason.BadExceptionRegion
             PowerOff -> EmulatorEvent.Stop.Reason.PowerOff
+            WirelessUnsupported -> EmulatorEvent.Stop.Reason.WirelessUnsupported
             else -> null
         }
     }

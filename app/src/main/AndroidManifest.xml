@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="32" />
+    <uses-feature android:name="android.hardware.wifi.direct" android:required="false" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.NEARBY_WIFI_DEVICES" android:usesPermissionFlags="neverForLocation" />
@@ -98,6 +103,42 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity
+            android:name=".multiplayer.phantom.PhantomActivity"
+            android:launchMode="singleTask"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|keyboard|uiMode"
+            android:exported="false" />
+        <service
+            android:name=".multiplayer.phantom.PhantomCoordinatorService"
+            android:exported="false" />
+        <service
+            android:name=".multiplayer.phantom.PhantomPrimaryService"
+            android:process=":phantom_primary"
+            android:exported="false" />
+        <service
+            android:name=".multiplayer.phantom.PhantomPeerService"
+            android:process=":phantom_peer"
+            android:exported="false" />
+        <activity
+            android:name=".multiplayer.phantom.PhantomPrimaryActivity"
+            android:process=":phantom_primary"
+            android:taskAffinity="${applicationId}.phantom_primary"
+            android:excludeFromRecents="true"
+            android:theme="@style/EmulatorTheme"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|keyboard|uiMode"
+            android:exported="false" />
+        <activity
+            android:name=".multiplayer.phantom.PhantomPeerActivity"
+            android:process=":phantom_peer"
+            android:taskAffinity="${applicationId}.phantom_peer"
+            android:excludeFromRecents="true"
+            android:theme="@style/EmulatorTheme"
+            android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|keyboard|uiMode"
+            android:exported="false" />
+        <activity
+            android:name=".multiplayer.MultiplayerActivity"
+            android:exported="false"
+            android:parentActivityName=".ui.romlist.RomListActivity" />
         <activity
             android:name=".ui.dsiwaremanager.DSiWareManagerActivity"
             android:label="@string/dsiware_manager"

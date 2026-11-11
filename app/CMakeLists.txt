@@ -147,6 +147,7 @@ set(ZSTD_MULTITHREAD_SUPPORT OFF CACHE BOOL "" FORCE)
 add_subdirectory("${ANDROID_CPP_DIR}/zstd/build/cmake" ./zstd)
 target_include_directories(enet INTERFACE "${ANDROID_CPP_DIR}/enet/include")
 list(APPEND CMAKE_MODULE_PATH "${CORE_LIB_DIR}/cmake")
+set(MELONDS_ENABLE_ENET ON CACHE BOOL "Build ENet LAN/netplay support" FORCE)
 add_subdirectory("${CORE_LIB_DIR}/src/net" ./net-utils)
 
 add_library(
@@ -163,6 +164,7 @@ add_library(
         "${ANDROID_CPP_DIR}/DSiSupport.cpp"
         "${ANDROID_CPP_DIR}/EmulatorArgsBuilder.cpp"
         "${ANDROID_CPP_DIR}/EmulatorMessageQueueJNI.cpp"
+        "${ANDROID_CPP_DIR}/EmulationThreadCpuPolicy.cpp"
         "${ANDROID_CPP_DIR}/JniEnvHandler.cpp"
         "${ANDROID_CPP_DIR}/MelonDS.cpp"
         "${ANDROID_CPP_DIR}/MelonDSAndroidCameraHandler.cpp"
@@ -172,6 +174,8 @@ add_library(
         "${ANDROID_CPP_DIR}/MelonDSAudio.cpp"
         "${ANDROID_CPP_DIR}/MelonDSNandJNI.cpp"
         "${ANDROID_CPP_DIR}/MelonInstance.cpp"
+        "${ANDROID_CPP_DIR}/MultiplayerSession.cpp"
+        "${ANDROID_CPP_DIR}/MultiplayerJNI.cpp"
         "${ANDROID_CPP_DIR}/MicInputOboeCallback.cpp"
         "${ANDROID_CPP_DIR}/NativeGlContext.cpp"
         "${ANDROID_CPP_DIR}/OboeCallback.cpp"
@@ -206,6 +210,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
     target_link_options(melonDS-android-frontend PRIVATE
             "$<$<CONFIG:RelWithDebInfo>:-flto=full>"
             "$<$<CONFIG:RelWithDebInfo>:-fuse-ld=lld>"
+            "$<$<CONFIG:RelWithDebInfo>:-Wl,--exclude-libs,libcore.a>"
             "$<$<CONFIG:RelWithDebInfo>:-Wl,--lto-O3>")
 endif()
 

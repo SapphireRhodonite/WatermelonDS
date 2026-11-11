@@ -1,0 +1,19 @@
+<resources>
+    <string name="phantom_title">Jugar con un clon temporal</string>
+    <string name="phantom_ds_only">Elige un cartucho en modo DS con la tarjeta DLDI y el cartucho GBA desconectados.</string>
+    <string name="phantom_conflict">El guardado cambió fuera de esta sesión. Ambas copias están conservadas.</string>
+    <string name="phantom_busy">Cierra la partida en ejecución antes de abrir o guardar una sesión con clon.</string>
+    <string name="phantom_save_failed">No se pudo verificar el guardado. La copia anterior y el resultado están disponibles para recuperación.</string>
+    <string name="phantom_link_error">No se pudo conectar a los dos jugadores (código %1$d).</string>
+    <string name="phantom_to_peer">Principal → Clon</string>
+    <string name="phantom_to_primary">Clon → Principal</string>
+    <string name="phantom_playing_main">Jugando en la principal</string>
+    <string name="phantom_playing_clone">Jugando en el clon</string>
+    <string name="phantom_unavailable">Un jugador se desconectó antes del cierre de la sesión.</string>
+    <string name="phantom_result_title">¿Quieres conservar el guardado?</string>
+    <string name="phantom_result_body">Tu guardado original sigue intacto. Elige Conservar principal para sobrescribirlo con lo que guardaste dentro de la partida principal. El guardado del clon siempre se descarta.</string>
+    <string name="phantom_keep">Conservar principal</string>
+    <string name="phantom_discard">Descartar sesión</string>
+    <string name="phantom_kept">Guardado principal verificado</string>
+    <string name="phantom_discarded">Sesión descartada</string>
+</resources>

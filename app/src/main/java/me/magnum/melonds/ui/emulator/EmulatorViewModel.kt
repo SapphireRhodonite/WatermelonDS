@@ -1,5 +1,9 @@
 package me.magnum.melonds.ui.emulator
 
+import me.magnum.melonds.multiplayer.phantom.PhantomPlayer
+import me.magnum.melonds.multiplayer.MultiplayerSession
+import me.magnum.melonds.multiplayer.MultiplayerRoom
+
 import android.content.Context
 import android.content.pm.ApplicationInfo
 import android.net.Uri
@@ -619,7 +623,19 @@ class EmulatorViewModel @Inject constructor(
 
         val launchArgs = LaunchArgs.fromSavedStateHandle(savedStateHandle)
         if (launchArgs != null) {
-            launchEmulator(launchArgs)
+            val player = PhantomPlayer.current
+            if (player == null) {
+                launchEmulator(launchArgs)
+            } else viewModelScope.launch {
+                try {
+                    player.connect()
+                    launchEmulator(launchArgs)
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) {
+                    player.notify(PhantomPlayer.ERROR, e.localizedMessage)
+                    _emulatorState.value = EmulatorState.RomLoadError(e.localizedMessage)
+                }
+            }
         } else {
             _uiEvent.tryEmit(EmulatorUiEvent.CloseEmulator)
         }
@@ -746,13 +762,18 @@ class EmulatorViewModel @Inject constructor(
         viewModelScope.launch {
             resetEmulatorState(EmulatorState.LoadingRom())
             sessionCoroutineScope.launch {
-                _emulatorState.value = EmulatorState.ValidatingRom(refreshRomForLaunch(rom))
+                val refreshedRom = refreshRomForLaunch(rom)
+                _emulatorState.value = if (refreshedRom != null) {
+                    EmulatorState.ValidatingRom(refreshedRom)
+                } else {
+                    EmulatorState.RomNotFoundError(rom.uri.toString())
+                }
             }
         }
     }
 
-    private suspend fun refreshRomForLaunch(rom: Rom): Rom {
-        return romsRepository.getRomAtUri(rom.uri) ?: rom
+    private suspend fun refreshRomForLaunch(rom: Rom): Rom? {
+        return romsRepository.getRomAtUri(rom.uri) ?: rom.takeUnless { it.metadataPending }
     }
 
     private fun loadRom(romUri: Uri) {
@@ -788,7 +809,7 @@ class EmulatorViewModel @Inject constructor(
             _emulatorState.value = EmulatorState.LoadingRom()
             currentRom = rom
             activeRomConfig.value = rom
-            val isRetroAchievementsEnabledForLaunch = isRetroAchievementsEnabledForLaunch(rom)
+            val isRetroAchievementsEnabledForLaunch = PhantomPlayer.current == null && isRetroAchievementsEnabledForLaunch(rom)
             val endpointSnapshot = if (isRetroAchievementsEnabledForLaunch) {
                 retroAchievementsEndpointProvider.beginSession()
             } else {
@@ -870,7 +891,7 @@ class EmulatorViewModel @Inject constructor(
                     maybeAutoLoadStateOnLaunch(rom)
                     DebugCommandStateStore.onRunningRomReady(rom.uri, rom.name)
                     startTrackingFps()
-                    startTrackingPlayTime(rom)
+                    if (PhantomPlayer.current == null) startTrackingPlayTime(rom)
                 }
             }
         } catch (exception: Throwable) {
@@ -1702,12 +1723,15 @@ class EmulatorViewModel @Inject constructor(
 
     fun pauseEmulator(showPauseMenu: Boolean) {
         sessionCoroutineScope.launch {
-            emulatorManager.pauseEmulator()
+            val shouldPause = !showPauseMenu || !MultiplayerSession.active
+            if (shouldPause) {
+                emulatorManager.pauseEmulator()
+            }
             if (showPauseMenu) {
                 val rendererDebugToolsEnabled = settingsRepository.isRendererDebugToolsEnabled().firstOrNull() == true
                 val pauseOptions = when (_emulatorState.value) {
                     is EmulatorState.RunningRom -> {
-                        RomPauseMenuOption.entries.filter {
+                        if (PhantomPlayer.current != null) listOf(RomPauseMenuOption.EXIT) else RomPauseMenuOption.entries.filter {
                             filterRomPauseMenuOption(it, rendererDebugToolsEnabled)
                         }
                     }
@@ -1735,6 +1759,7 @@ class EmulatorViewModel @Inject constructor(
                             PauseMenu(
                                 options = pauseOptions,
                                 labelOverrides = labelOverrides,
+                                isPaused = shouldPause || DebugCommandStateStore.isDebugPauseHeld(),
                             ),
                         ),
                     )
@@ -2109,6 +2134,8 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun onPauseMenuOptionSelected(option: PauseMenuOption) {
+        if ((option == RomPauseMenuOption.SAVE_STATE || option == RomPauseMenuOption.LOAD_STATE
+                || option == RomPauseMenuOption.REWIND) && multiplayerOperationBlocked()) return
         when (option) {
             is RomPauseMenuOption -> {
                 when (option) {
@@ -2227,6 +2254,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun onOpenRewind() {
+        if (multiplayerOperationBlocked()) return
         if (!settingsRepository.isRewindEnabled()) {
             _toastEvent.tryEmit(ToastEvent.RewindNotEnabled)
             return
@@ -2244,11 +2272,18 @@ class EmulatorViewModel @Inject constructor(
         }
     }
 
-    fun onFastForwardToggleRequested(): Boolean {
+    private fun multiplayerOperationBlocked(): Boolean {
+        if (!MultiplayerSession.active) return false
+        _toastEvent.tryEmit(ToastEvent.MultiplayerOperationUnavailable)
         return true
     }
 
+    fun onFastForwardToggleRequested(): Boolean {
+        return !multiplayerOperationBlocked()
+    }
+
     fun rewindToState(rewindSaveState: RewindSaveState) {
+        if (multiplayerOperationBlocked()) return
         if (!emulatorSession.areSaveStateLoadsAllowed()) {
             _toastEvent.tryEmit(ToastEvent.RewindNotAvailableWhileRAHardcoreModeEnabled)
             return
@@ -2260,6 +2295,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun saveStateToSlot(slot: SaveStateSlot) {
+        if (multiplayerOperationBlocked()) return
         sessionCoroutineScope.launch {
             (_emulatorState.value as? EmulatorState.RunningRom)?.let {
                 emulatorManager.pauseEmulator()
@@ -2275,6 +2311,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun loadStateFromSlot(slot: SaveStateSlot) {
+        if (multiplayerOperationBlocked()) return
         if (!emulatorSession.areSaveStateLoadsAllowed()) {
             _toastEvent.tryEmit(ToastEvent.CannotLoadSaveStatesWhenRAHardcoreIsEnabled)
             return
@@ -2295,6 +2332,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun doQuickSave() {
+        if (multiplayerOperationBlocked()) return
         val currentState = _emulatorState.value
         when (currentState) {
             is EmulatorState.RunningRom -> {
@@ -2317,6 +2355,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun doQuickLoad() {
+        if (multiplayerOperationBlocked()) return
         val currentState = _emulatorState.value
         when (currentState) {
             is EmulatorState.RunningRom -> {
@@ -2384,6 +2423,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     private suspend fun saveRomState(rom: Rom, slot: SaveStateSlot): Boolean {
+        if (MultiplayerSession.active) return false
         val slotUri = getRomSaveStateUri(rom, slot)
         if (!emulatorManager.saveState(slotUri)) {
             return false
@@ -2399,6 +2439,7 @@ class EmulatorViewModel @Inject constructor(
     }
 
     private suspend fun loadRomState(rom: Rom, slot: SaveStateSlot): Boolean {
+        if (MultiplayerSession.active) return false
         if (!slot.exists) {
             return false
         }
@@ -2826,6 +2867,12 @@ class EmulatorViewModel @Inject constructor(
                                     _toastEvent.tryEmit(ToastEvent.InternalError)
                                 }
                             }
+                            EmulatorEvent.Stop.Reason.WirelessUnsupported -> {
+                                runCatching { MultiplayerRoom.leave() }.onFailure {
+                                    Log.e("Multiplayer", "Could not close unsupported wireless room", it)
+                                }
+                                _toastEvent.tryEmit(ToastEvent.WirelessUnsupported)
+                            }
                             EmulatorEvent.Stop.Reason.PowerOff -> { /* no-op */ }
                         }
                         when (_emulatorState.value) {
@@ -2956,7 +3003,8 @@ class EmulatorViewModel @Inject constructor(
                 }
             }.combine(isRetroArchShaderDeclinedForSession) { configuration, declined ->
                 configuration to declined
-            }.collectLatest { (it, declined) ->
+            }.collectLatest { (requested, declined) ->
+                val it = MultiplayerSession.configureRenderer(requested)
                 val dropShader = declined && it.videoFiltering == VideoFiltering.RETROARCH
                 _runtimeRendererConfiguration.value = RuntimeRendererConfiguration(
                     renderer = it.renderer,
@@ -2979,7 +3027,7 @@ class EmulatorViewModel @Inject constructor(
             } else {
                 settingsRepository.observeRenderConfiguration(romConfig).first()
             }
-        }.getOrNull() ?: return
+        }.getOrNull()?.let(MultiplayerSession::configureRenderer) ?: return
 
         if (configuration.videoFiltering != VideoFiltering.RETROARCH) {
             return
@@ -6336,8 +6384,13 @@ class EmulatorViewModel @Inject constructor(
             while (isActive) {
                 delay(1.seconds)
                 _currentFps.value = emulatorManager.getFps().roundToInt()
-                val configuredIr = settingsRepository.getVideoInternalResolutionScalingValue()
-                val renderedIr = emulatorManager.getVulkanRenderedInternalResolution().takeIf { it > 0 } ?: configuredIr
+                val configuration = _runtimeRendererConfiguration.value ?: continue
+                val configuredIr = configuration.resolutionScaling
+                val renderedIr = if (configuration.renderer == VideoRenderer.VULKAN) {
+                    emulatorManager.getVulkanRenderedInternalResolution().takeIf { it > 0 } ?: configuredIr
+                } else {
+                    configuredIr
+                }
                 _renderedInternalResolution.value = renderedIr to configuredIr
             }
         }

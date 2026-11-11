@@ -18,6 +18,7 @@ public:
     }
 
     virtual bool hasSession() const { return true; }
+    virtual bool supportsThreadGroups() const { return false; }
     virtual void destroySession() = 0;
     virtual void reportActualWorkDuration(int64_t actualDurationNs) = 0;
     virtual void updateTargetWorkDuration(int64_t targetDurationNs) = 0;

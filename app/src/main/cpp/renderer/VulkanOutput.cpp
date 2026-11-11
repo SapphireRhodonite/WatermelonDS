@@ -4559,6 +4559,8 @@ bool VulkanOutput::dispatchFaithfulCompositor(Frame* frame, FrameResource& resou
             return rejectCompose("missing_exact_native_projection");
         }
     }
+    const u32 nativeFallbackEncoding = faithfulNativeFallbackSource != nullptr
+        ? 0x10000000u : 0u;
     if (!faithfulAtlasDeviceVisible[faithfulRing])
         return rejectCompose("atlas_not_device_visible");
 
@@ -6204,7 +6206,8 @@ bool VulkanOutput::dispatchFaithfulCompositor(Frame* frame, FrameResource& resou
     {
 
         const u32 empujeB1[3] = {
-            3u, 1u | bitsCapHR, causalHeaderAllNativeCpu ? 1u : 0u};
+            3u, 1u | bitsCapHR | nativeFallbackEncoding,
+            causalHeaderAllNativeCpu ? 1u : 0u};
         vkCmdBindPipeline(resource.commandBuffer,
                           VK_PIPELINE_BIND_POINT_COMPUTE,
                           faithfulModePipeline[3]);
@@ -6415,7 +6418,7 @@ bool VulkanOutput::dispatchFaithfulCompositor(Frame* frame, FrameResource& resou
                       && ssaaTecho()) ? 0x1000u : 0u)
                 | ((paseFuenteExacta && requiereFuenteA)
                        ? 0x2000u : (f2Activo ? 0x2000u : 0u))
-                | ((targetSlot & 3u) << 25u),
+                | ((targetSlot & 3u) << 25u) | nativeFallbackEncoding,
             mezclaCap};
         const VkPipeline captureMaterializationPipeline =
             captureRecipeSourceAOnly
@@ -6621,7 +6624,7 @@ bool VulkanOutput::dispatchFaithfulCompositor(Frame* frame, FrameResource& resou
             ? liveCausalWidth / (256u * escala) : 0u;
         const u32 empujeCompacto[3] = {
             6u,
-            escala | (liveCausalRatio << 16u),
+            escala | (liveCausalRatio << 16u) | nativeFallbackEncoding,
             causalHeaderAllNativeCpu ? 1u : 0u,
         };
         vkCmdBindPipeline(resource.commandBuffer,
@@ -6679,7 +6682,7 @@ bool VulkanOutput::dispatchFaithfulCompositor(Frame* frame, FrameResource& resou
         escala | (stash3dForzado ? 0x100u : 0u) | (ratio3d << 16u)
             | ((ratio3d > 1u && ssaaTecho()) ? 0x1000u : 0u)
             | (f2Activo ? 0x2000u : 0u)
-            | bitsCapHR, 0u};
+            | bitsCapHR | nativeFallbackEncoding, 0u};
     vkCmdPushConstants(resource.commandBuffer, faithfulPipeLayout,
                        VK_SHADER_STAGE_COMPUTE_BIT, 0, 12, empuje);
     const bool faithfulB2NativeCellInvocations = escala > 1u;
@@ -7819,7 +7822,7 @@ bool VulkanOutput::submitFrameCommand(Frame* frame, FrameResource& resource, boo
     return true;
 }
 
-bool VulkanOutput::captureRenderer3dSnapshot(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap)
+bool VulkanOutput::captureRenderer3dSnapshot(Frame* frame, const melonDS::VulkanRenderer3D& renderer3D, bool snapshotScreenSwap, bool deferSubmit)
 {
     std::scoped_lock lifetimeLock(faithfulLifetimeLock);
     std::scoped_lock commandLock(commandPoolLock);
@@ -7857,11 +7860,30 @@ bool VulkanOutput::captureRenderer3dSnapshot(Frame* frame, const melonDS::Vulkan
     resource.previousBottomSourceFrame = nullptr;
     resource.previousBottomSourcePending = false;
 
+    if (deferSubmit && faithfulPipelineReady)
+        return true;
+
     const bool submitted = submitFrameCommand(frame, resource, true);
     if (submitted)
     {
         resource.timestampPending = false;
     }
+    return submitted;
+}
+
+bool VulkanOutput::flushRenderer3dSnapshot(Frame* frame)
+{
+    std::scoped_lock lifetimeLock(faithfulLifetimeLock);
+    std::scoped_lock commandLock(commandPoolLock);
+    const auto iterator = resources.find(frame);
+    if (iterator == resources.end())
+        return false;
+    FrameResource& resource = iterator->second;
+    if (!resource.cbAbierto)
+        return resource.renderer3dSnapshotState == Renderer3dSnapshotState::Published;
+    const bool submitted = submitFrameCommand(frame, resource, true);
+    if (submitted)
+        resource.timestampPending = false;
     return submitted;
 }
 
@@ -8081,7 +8103,8 @@ bool VulkanOutput::liveCausalSourceAvailable(const Frame* frame, u32 escala,
     return matches != 0u && usable;
 }
 
-bool VulkanOutput::frameHasOwnRenderer3dSnapshot(const Frame* frame) const
+bool VulkanOutput::frameHasOwnRenderer3dSnapshot(
+    const Frame* frame, bool requireExactNativeProjection) const
 {
     if (frame == nullptr)
         return false;
@@ -8091,6 +8114,16 @@ bool VulkanOutput::frameHasOwnRenderer3dSnapshot(const Frame* frame) const
         return false;
     const FrameResource& resource = iterator->second;
     if (!resource.hasRenderer3dSnapshot)
+        return false;
+    if (requireExactNativeProjection
+        && (!resource.snapshotFromGraphicsBackend
+            || !resource.renderer3dSnapshotSourceIdentityValid
+            || resource.renderer3dSnapshotSourceEpoch == 0u
+            || resource.renderer3dSnapshotSourceSequence == 0u
+            || !resource.renderer3dSnapshotProjection.hasExactNativeProjection()
+            || !resource.renderer3dNativeProjectionValid
+            || resource.renderer3dNativeProjectionBuffer == VK_NULL_HANDLE
+            || resource.renderer3dNativeProjectionMemory == VK_NULL_HANDLE))
         return false;
     if (resource.renderer3dSnapshotState == Renderer3dSnapshotState::PendingSubmit)
         return true;
@@ -9689,7 +9722,7 @@ bool VulkanOutput::recordRenderer3dSnapshotCopy(
             : renderer3D.GetLastSubmittedRenderPolygonCount() == 0u);
     melonDS::VulkanRenderer3D::SubmittedRenderIdentity selectedIdentity{};
 
-    const bool faithfulNativeProjectionEnabled = resource.width > 256u;
+    const bool faithfulNativeProjectionEnabled = resource.width >= 256u;
     {
 
         clearRenderer3dSnapshotPublication(resource, false);

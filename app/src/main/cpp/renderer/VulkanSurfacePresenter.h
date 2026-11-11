@@ -175,7 +175,8 @@ public:
         u64 gpuWaitTimeoutNs,
         u64 timeoutNs,
         const VulkanCausalWaitRunner& waitRunner);
-    bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX);
+    bool waitForFrameConsumption(Frame* frame, u64 timeoutNs = UINT64_MAX,
+        void (*hostService)(void*) = nullptr, void* hostContext = nullptr);
     bool getFrameConsumptionDependency(const Frame* frame, VkSemaphore& semaphore, u64& value);
     void invalidateDescriptorCaches();
     VulkanPresenterPacingStats takePacingStatsSnapshotAndReset();
@@ -405,7 +406,8 @@ private:
     bool createSyncObjects();
     void destroySyncObjects();
     bool submitPresentFenceMarker(PresentConsumptionToken& token);
-    bool waitForPresentFenceToken(PresentConsumptionToken& token, u64 timeoutNs);
+    bool waitForPresentFenceToken(PresentConsumptionToken& token, u64 timeoutNs,
+        void (*hostService)(void*), void* hostContext);
     bool waitForPresentQueueRecovery(PresentConsumptionToken& token);
 
     bool createSurfaceStateResources(SurfaceState& surfaceState);

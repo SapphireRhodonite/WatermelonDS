@@ -1,5 +1,7 @@
 package me.magnum.melonds.impl.emulator
 
+import me.magnum.melonds.multiplayer.MultiplayerSession
+
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.model.emulator.EmulatorSessionUpdateAction
@@ -80,10 +82,11 @@ class EmulatorSession {
     }
 
     fun areSaveStatesAllowed(): Boolean {
-        return true
+        return !MultiplayerSession.active
     }
 
     fun areSaveStateLoadsAllowed(): Boolean {
+        if (MultiplayerSession.active) return false
         // Cannot load save-states when RA hardcore is enabled.
         return !isRetroAchievementsHardcoreModeEnabled || !areRetroAchievementsEnabled()
     }

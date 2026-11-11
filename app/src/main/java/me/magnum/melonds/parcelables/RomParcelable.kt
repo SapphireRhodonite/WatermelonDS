@@ -44,6 +44,8 @@ class RomParcelable : Parcelable {
             installedDsiWareTitleId = installedDsiWareTitleId,
             installedDsiWareIcon = installedDsiWareIcon,
             resolvedDsiProfile = parcel.parcelable<DSiProfile>(),
+            metadataPending = parcel.readInt() == 1,
+            metadataUserChanges = parcel.readInt(),
         )
     }
 
@@ -61,6 +63,8 @@ class RomParcelable : Parcelable {
         dest.writeLong(rom.installedDsiWareTitleId ?: -1L)
         dest.writeByteArray(rom.installedDsiWareIcon)
         dest.writeParcelable(rom.resolvedDsiProfile, flags)
+        dest.writeInt(if (rom.metadataPending) 1 else 0)
+        dest.writeInt(rom.metadataUserChanges)
     }
 
     override fun describeContents(): Int {

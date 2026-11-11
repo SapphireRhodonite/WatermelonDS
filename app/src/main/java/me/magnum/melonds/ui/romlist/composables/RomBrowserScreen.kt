@@ -64,6 +64,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import me.magnum.melonds.R
+import me.magnum.melonds.multiplayer.MultiplayerInvitePill
+import me.magnum.melonds.multiplayer.MultiplayerNearbyWatch
 import me.magnum.melonds.domain.model.RomFilter
 import me.magnum.melonds.domain.model.RomScanningStatus
 import me.magnum.melonds.domain.model.RomViewMode
@@ -97,7 +99,9 @@ fun RomBrowserScreen(
     onBootFirmwareDs: () -> Unit,
     onBootFirmwareDsi: () -> Unit,
     onOpenDsiWareManager: () -> Unit,
+    onOpenMultiplayer: () -> Unit,
     onOpenSettings: () -> Unit,
+    onJoinNearby: (String) -> Unit = {},
     onRomVisible: (Rom) -> Unit = {},
     onFocusedRomChanged: (Rom?) -> Unit = {},
     onDpadDownGateChanged: ((() -> Boolean)?) -> Unit = {},
@@ -185,9 +189,15 @@ fun RomBrowserScreen(
                 onBootFirmwareDs = onBootFirmwareDs,
                 onBootFirmwareDsi = onBootFirmwareDsi,
                 onOpenDsiWareManager = onOpenDsiWareManager,
+                onOpenMultiplayer = onOpenMultiplayer,
                 onRefresh = onRefresh,
                 onOpenSettings = onOpenSettings,
             )
+
+            if (!state.isSearchActive) {
+                MultiplayerNearbyWatch()
+            }
+            val invite: @Composable () -> Unit = { if (!state.isSearchActive) MultiplayerInvitePill(onJoinNearby) }
 
             if (scanningStatus == RomScanningStatus.SCANNING) {
                 LinearProgressIndicator(
@@ -216,6 +226,7 @@ fun RomBrowserScreen(
                         FilterChipsRow(
                             selected = state.filter,
                             onFilterSelected = onFilterSelected,
+                            trailing = invite,
                         )
                         EmptyState(filter = state.filter)
                     }
@@ -247,6 +258,7 @@ fun RomBrowserScreen(
                                     onSortSelected = onSortSelected,
                                     onNavigateUp = onNavigateUp,
                                     onRomVisible = onRomVisible,
+                                    invite = invite,
                                 )
                                 RomViewMode.LIST -> ListContent(
                                     state = state,
@@ -273,6 +285,7 @@ fun RomBrowserScreen(
                                     onSortSelected = onSortSelected,
                                     onNavigateUp = onNavigateUp,
                                     onRomVisible = onRomVisible,
+                                    invite = invite,
                                 )
                             }
                         }
@@ -381,6 +394,7 @@ private fun GridContent(
     onSortSelected: (SortingMode) -> Unit,
     onNavigateUp: () -> Unit,
     onRomVisible: (Rom) -> Unit,
+    invite: @Composable () -> Unit,
 ) {
     val folders = state.entries.take(folderCount).filterIsInstance<RomBrowserEntry.Folder>()
     val roms = state.entries.drop(folderCount).filterIsInstance<RomBrowserEntry.RomItem>()
@@ -408,6 +422,7 @@ private fun GridContent(
                     selected = state.filter,
                     onFilterSelected = onFilterSelected,
                     modifier = Modifier.padding(start = 0.dp),
+                    trailing = invite,
                 )
             }
             if (showContinueShelf) {
@@ -523,6 +538,7 @@ private fun ListContent(
     onSortSelected: (SortingMode) -> Unit,
     onNavigateUp: () -> Unit,
     onRomVisible: (Rom) -> Unit,
+    invite: @Composable () -> Unit,
 ) {
     RomListOverscrollProvider {
         LazyColumn(
@@ -543,6 +559,7 @@ private fun ListContent(
                 FilterChipsRow(
                     selected = state.filter,
                     onFilterSelected = onFilterSelected,
+                    trailing = invite,
                 )
             }
             if (showContinueShelf) {

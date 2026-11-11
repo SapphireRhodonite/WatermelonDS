@@ -1,5 +1,8 @@
 package me.magnum.melonds.ui.emulator
 
+import me.magnum.melonds.multiplayer.phantom.PhantomPlayer
+import me.magnum.melonds.multiplayer.MultiplayerSession
+
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ApplicationInfo
@@ -7,6 +10,7 @@ import android.content.res.Configuration
 import android.graphics.Typeface
 import android.hardware.display.DisplayManager
 import android.hardware.input.InputManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
@@ -158,7 +162,7 @@ import javax.inject.Inject
 import kotlin.math.max
 
 @AndroidEntryPoint
-class EmulatorActivity : AppCompatActivity() {
+open class EmulatorActivity : AppCompatActivity() {
     companion object {
         const val KEY_ROM = "rom"
         const val KEY_PATH = "PATH"
@@ -230,6 +234,7 @@ class EmulatorActivity : AppCompatActivity() {
     lateinit var boxArtRepository: me.magnum.melonds.ui.romlist.boxart.BoxArtRepository
 
     private var presentation: ExternalPresentation? = null
+    private var phantomPlayerResumed = false
 
     private lateinit var handler: Handler
     private val displayListener = object : DisplayManager.DisplayListener {
@@ -376,7 +381,7 @@ class EmulatorActivity : AppCompatActivity() {
             viewModel.onRetroAchievementsLogoutRequested()
         } else {
             val pauseMenuStillOpen = pauseMenuState.value != null || activeOverlays.hasActiveOverlays()
-            viewModel.onSettingsChanged(resumeWhenFinished = !pauseMenuStillOpen)
+            viewModel.onSettingsChanged(resumeWhenFinished = MultiplayerSession.active || !pauseMenuStillOpen)
             if (pauseMenuStillOpen) {
                 requestOverlayHostFocus()
             }
@@ -519,6 +524,21 @@ class EmulatorActivity : AppCompatActivity() {
         }
     )
 
+    private fun acquireMultiplayerWifiLock(): WifiManager.WifiLock? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !MultiplayerSession.active) return null
+        return try {
+            applicationContext.getSystemService<WifiManager>()
+                ?.createWifiLock(WifiManager.WIFI_MODE_FULL_LOW_LATENCY, "watermelon-multiplayer")
+                ?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+        } catch (error: RuntimeException) {
+            android.util.Log.e("Multiplayer", "Wi-Fi low latency unavailable", error)
+            null
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handler = Handler(mainLooper)
@@ -527,6 +547,36 @@ class EmulatorActivity : AppCompatActivity() {
         binding = ActivityEmulatorBinding.inflate(layoutInflater)
         supportRequestWindowFeature(Window.FEATURE_NO_TITLE)
         setContentView(binding.root)
+        if (MultiplayerSession.active) {
+            lifecycleScope.launch {
+                var notified = false
+                lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                    withContext(Dispatchers.IO) {
+                        val wifiLock = acquireMultiplayerWifiLock()
+                        try {
+                            while (true) {
+                                if (MultiplayerSession.status().optBoolean("interrupted")) {
+                                    if (!notified) {
+                                        notified = true
+                                        withContext(Dispatchers.Main) {
+                                            Toast.makeText(this@EmulatorActivity, R.string.multiplayer_interrupted_message, Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                                    break
+                                }
+                                delay(500)
+                            }
+                        } finally {
+                            try {
+                                if (wifiLock?.isHeld == true) wifiLock.release()
+                            } catch (error: RuntimeException) {
+                                android.util.Log.e("Multiplayer", "Wi-Fi low latency release failed", error)
+                            }
+                        }
+                    }
+                }
+            }
+        }
         setupFullscreen()
         ViewCompat.setOnApplyWindowInsetsListener(binding.root) { _, windowInsets ->
             val insets = windowInsets.getInsets(WindowInsetsCompat.Type.displayCutout())
@@ -939,6 +989,7 @@ class EmulatorActivity : AppCompatActivity() {
                         ToastEvent.RewindNotAvailableWhileRAHardcoreModeEnabled -> getString(R.string.rewind_unavailable_ra_hardcore_enabled) to Toast.LENGTH_LONG
                         ToastEvent.StateLoadFailed -> getString(R.string.failed_load_state) to Toast.LENGTH_SHORT
                         ToastEvent.InvalidAutoLoadState -> getString(R.string.invalid_auto_load_state) to Toast.LENGTH_LONG
+                        ToastEvent.MultiplayerOperationUnavailable -> getString(R.string.multiplayer_operation_unavailable) to Toast.LENGTH_LONG
                         ToastEvent.StateSaveFailed -> getString(R.string.failed_save_state) to Toast.LENGTH_SHORT
                         ToastEvent.StateStateDoesNotExist -> getString(R.string.cant_load_empty_slot) to Toast.LENGTH_SHORT
                         ToastEvent.CannotLoadSaveStatesWhenRAHardcoreIsEnabled -> getString(R.string.load_states_unavailable_ra_hardcore_enabled) to Toast.LENGTH_LONG
@@ -948,6 +999,7 @@ class EmulatorActivity : AppCompatActivity() {
                         ToastEvent.CannotSwitchRetroAchievementsMode -> getString(R.string.retro_achievements_relaunch_to_apply_settings) to Toast.LENGTH_LONG
                         ToastEvent.GbaModeNotSupported -> getString(R.string.emulator_stop_gba_mode_unsupported) to Toast.LENGTH_SHORT
                         ToastEvent.InternalError -> getString(R.string.emulator_stop_internal_error) to Toast.LENGTH_LONG
+                        ToastEvent.WirelessUnsupported -> getString(R.string.emulator_stop_wireless_unsupported) to Toast.LENGTH_LONG
                         ToastEvent.OfflineAchievementsLedgerTampered -> getString(R.string.offline_ra_ledger_tampered_toast) to Toast.LENGTH_LONG
                         ToastEvent.OfflineAchievementsSyncFailed -> getString(R.string.offline_ra_sync_failed_toast) to Toast.LENGTH_LONG
                         ToastEvent.PendingRaStateVerificationFailed ->
@@ -1557,7 +1609,7 @@ class EmulatorActivity : AppCompatActivity() {
         val displays = deviceLayoutDisplayMapper.mapDisplaysToLayoutDisplays(currentDisplay, secondaryDisplay)
         viewModel.setConnectedDisplays(displays)
 
-        showExternalDisplay(secondaryDisplay)
+        showExternalDisplay(secondaryDisplay.takeIf { PhantomPlayer.current == null || phantomPlayerResumed })
     }
 
     private fun showExternalDisplay(secondaryDisplay: Display?) {
@@ -1672,6 +1724,10 @@ class EmulatorActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (PhantomPlayer.current != null) {
+            phantomPlayerResumed = true
+            updateDisplays()
+        }
         viewModel.onHostResumed()
         choreographerFrameRenderer.startRendering()
         startShaderDiagnosticsPolling()
@@ -2207,7 +2263,8 @@ class EmulatorActivity : AppCompatActivity() {
 
         isClosingEmulator = true
         releaseEmulatorUiResources()
-        finish()
+        val player = PhantomPlayer.current
+        if (player == null) finish() else player.notify(PhantomPlayer.CLOSE)
     }
 
     private fun releaseEmulatorUiResources() {
@@ -4026,13 +4083,19 @@ class EmulatorActivity : AppCompatActivity() {
     override fun onPause() {
         super.onPause()
         releaseVirtualButtonInputs()
+        if (PhantomPlayer.current != null) {
+            phantomPlayerResumed = false
+            showExternalDisplay(null)
+        }
         cancelStartupPresentationRefreshes()
         stopShaderDiagnosticsPolling()
         frontendInputHandler.clearFastForwardHold()
         enableScreenTimeOut()
-        choreographerFrameRenderer.stopRendering()
-        if (!isClosingEmulator && !isFinishing) {
-            viewModel.pauseEmulator(false)
+        if (!MultiplayerSession.active) {
+            choreographerFrameRenderer.stopRendering()
+            if (!isClosingEmulator && !isFinishing) {
+                viewModel.pauseEmulator(false)
+            }
         }
     }
 

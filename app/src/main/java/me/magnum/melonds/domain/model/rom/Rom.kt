@@ -1,6 +1,7 @@
 package me.magnum.melonds.domain.model.rom
 
 import android.net.Uri
+import me.magnum.melonds.domain.model.CartridgeId
 import me.magnum.melonds.domain.model.DSiProfile
 import me.magnum.melonds.domain.model.rom.config.RomConfig
 import java.util.*
@@ -23,6 +24,9 @@ data class Rom(
 
     val unsupportedReason: String? = null,
     val resolvedDsiProfile: DSiProfile? = null,
+    val metadataPending: Boolean = false,
+    val metadataUserChanges: Int = 0,
+    val cartridge: CartridgeId? = null,
 ) {
     val isInstalledDsiWareShortcut: Boolean
         get() = installedDsiWareTitleId != null

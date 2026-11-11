@@ -3,6 +3,7 @@ package me.magnum.melonds.ui.emulator.model
 import me.magnum.melonds.domain.model.VideoRenderer
 
 sealed class ToastEvent {
+    data object MultiplayerOperationUnavailable : ToastEvent()
     data object GbaLoadFailed : ToastEvent()
     data object RewindNotEnabled : ToastEvent()
     data object RewindNotAvailableWhileRAHardcoreModeEnabled : ToastEvent()
@@ -74,4 +75,5 @@ sealed class ToastEvent {
     data object RendererDebugCaptureFailed : ToastEvent()
     data object GbaModeNotSupported : ToastEvent()
     data object InternalError : ToastEvent()
+    data object WirelessUnsupported : ToastEvent()
 }

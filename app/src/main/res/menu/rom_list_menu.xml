@@ -69,6 +69,12 @@
     </item>
 
     <item
+        android:id="@+id/action_multiplayer"
+        android:title="@string/multiplayer_title"
+        android:orderInCategory="3"
+        app:showAsAction="never" />
+
+    <item
         android:id="@+id/action_dsiware_manager"
         android:title="@string/dsiware_manager"
         android:orderInCategory="3"

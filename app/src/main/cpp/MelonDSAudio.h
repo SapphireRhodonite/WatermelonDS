@@ -22,6 +22,7 @@ namespace MelonDSAndroid
     extern void cleanupAudio();
     extern void setAudioOutputRunIntent(bool running);
     extern void markAudioOutputProducerStarted();
+    extern bool reconcileAudioOutputRunStateOnce();
     extern std::string startAudioOutputPcmCapture(std::uint32_t durationMs);
     extern std::string dumpAudioOutputPcmCapture(const std::string& finalDirectory);
     extern void startAudio();

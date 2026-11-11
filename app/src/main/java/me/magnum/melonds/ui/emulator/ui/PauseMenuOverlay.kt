@@ -216,7 +216,7 @@ fun PauseMenuOverlay(
                     )
                     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 2.dp)) {
                         Text(
-                            text = stringResource(R.string.pause_paused_label),
+                            text = stringResource(if (pauseMenu.isPaused) R.string.pause_paused_label else R.string.ra_now_playing),
                             color = colors.red,
                             fontFamily = WatermelonMono,
                             fontSize = 9.sp,

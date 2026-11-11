@@ -5,4 +5,5 @@ data class RomMetadata(
     val developerName: String,
     val isDSiWareTitle: Boolean,
     val retroAchievementsHash: String,
+    val cartridge: CartridgeId,
 )

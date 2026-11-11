@@ -24,6 +24,8 @@ import androidx.fragment.app.activityViewModels
 import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -31,8 +33,11 @@ import me.magnum.melonds.domain.model.RomScanningStatus
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.repositories.SettingsRepository
 import me.magnum.melonds.impl.RomSaveFileManager
+import me.magnum.melonds.multiplayer.phantom.PhantomActivity
+import me.magnum.melonds.ui.emulator.EmulatorActivity
 import me.magnum.melonds.parcelables.RomParcelable
 import me.magnum.melonds.R
+import me.magnum.melonds.ui.common.LoadingDialog
 import me.magnum.melonds.ui.romdetails.RomDetailsActivity
 import me.magnum.melonds.ui.romlist.composables.RomBrowserScreen
 import me.magnum.melonds.ui.romlist.composables.RomContextMenu
@@ -67,6 +72,7 @@ class RomListFragment : Fragment() {
 
     private var romSelectedListener: ((Rom) -> Unit)? = null
     private var pendingSaveImportRom: Rom? = null
+    private var romActionJob: Job? = null
 
     private val saveFileImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val rom = pendingSaveImportRom
@@ -124,8 +130,14 @@ class RomListFragment : Fragment() {
                             confirmedAchievementHashes = confirmedAchievementHashes,
                             onFolderClick = { folder -> romListViewModel.openFolder(folder.docId) },
                             onRomClick = { rom ->
-                                romListViewModel.setRomLastPlayedNow(rom)
-                                romSelectedListener?.invoke(rom)
+                                withPreparedRom(rom) { prepared ->
+                                    if (prepared.unsupportedReason != null) {
+                                        Toast.makeText(requireContext(), prepared.unsupportedReason, Toast.LENGTH_LONG).show()
+                                    } else {
+                                        romListViewModel.setRomLastPlayedNow(prepared)
+                                        romSelectedListener?.invoke(prepared)
+                                    }
+                                }
                             },
                             onRomLongPress = { rom -> contextRomUri = rom.uri.toString() },
                             onRomConfigClick = { rom -> contextRomUri = rom.uri.toString() },
@@ -141,7 +153,9 @@ class RomListFragment : Fragment() {
                             onBootFirmwareDs = { (activity as? RomListActivity)?.bootFirmware(me.magnum.melonds.domain.model.ConsoleType.DS) },
                             onBootFirmwareDsi = { (activity as? RomListActivity)?.bootFirmware(me.magnum.melonds.domain.model.ConsoleType.DSi) },
                             onOpenDsiWareManager = { (activity as? RomListActivity)?.openDsiWareManager() },
+                            onOpenMultiplayer = { (activity as? RomListActivity)?.openMultiplayer() },
                             onOpenSettings = { (activity as? RomListActivity)?.openSettings() },
+                            onJoinNearby = { key -> (activity as? RomListActivity)?.openMultiplayer(key) },
                             onRomVisible = { rom -> romListViewModel.requestBoxArt(rom) },
                             onFocusedRomChanged = { rom ->
                                 (activity as? RomListActivity)?.onLibraryRomHighlighted(rom)
@@ -157,9 +171,13 @@ class RomListFragment : Fragment() {
                             raCoverUrl = currentContextRom?.let { raCoverByUri[it.uri.toString()] },
                             onDismiss = { contextRomUri = null },
                             onToggleFavorite = { rom -> romListViewModel.toggleFavorite(rom) },
-                            onShowDetails = { rom -> openRomDetails(rom) },
-                            onSendSaveFile = { rom -> shareSaveFile(rom) },
-                            onImportSaveFile = { rom -> requestSaveFileImport(rom) },
+                            onShowDetails = { rom -> withPreparedRom(rom, ::openRomDetails) },
+                            onPlayWithClone = { rom -> withPreparedRom(rom) { prepared ->
+                                startActivity(Intent(requireContext(), PhantomActivity::class.java)
+                                    .putExtra(EmulatorActivity.KEY_ROM, RomParcelable(prepared)))
+                            } },
+                            onSendSaveFile = { rom -> withPreparedRom(rom, ::shareSaveFile) },
+                            onImportSaveFile = { rom -> withPreparedRom(rom, ::requestSaveFileImport) },
                         )
                     }
                 }
@@ -177,6 +195,30 @@ class RomListFragment : Fragment() {
             putExtra(RomDetailsActivity.KEY_ROM, RomParcelable(rom))
         }
         startActivity(intent)
+    }
+
+    private fun withPreparedRom(rom: Rom, action: (Rom) -> Unit) {
+        romActionJob?.cancel()
+        romActionJob = viewLifecycleOwner.lifecycleScope.launch {
+            val dialog = LoadingDialog(requireContext())
+            dialog.show()
+            dialog.setCancelable(true)
+            dialog.setOnCancelListener { romActionJob?.cancel() }
+            val prepared = try {
+                romListViewModel.prepareRom(rom)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            } finally {
+                dialog.dismiss()
+            }
+            if (prepared == null) {
+                Toast.makeText(requireContext(), R.string.rom_metadata_unavailable, Toast.LENGTH_LONG).show()
+            } else {
+                action(prepared)
+            }
+        }
     }
 
     private fun shareSaveFile(rom: Rom) {

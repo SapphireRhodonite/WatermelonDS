@@ -73,6 +73,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import me.magnum.melonds.R
+import me.magnum.melonds.multiplayer.MultiplayerNearby
+import me.magnum.melonds.multiplayer.Pulse
+import androidx.compose.runtime.collectAsState
 import me.magnum.melonds.domain.model.RomFilter
 import me.magnum.melonds.domain.model.RomViewMode
 import me.magnum.melonds.domain.model.SortingMode
@@ -94,6 +97,7 @@ fun WatermelonLibraryHeader(
     onBootFirmwareDs: () -> Unit,
     onBootFirmwareDsi: () -> Unit,
     onOpenDsiWareManager: () -> Unit,
+    onOpenMultiplayer: () -> Unit,
     onRefresh: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -181,6 +185,8 @@ fun WatermelonLibraryHeader(
                         letterSpacing = (-0.3).sp,
                     )
                 }
+                MultiplayerHeaderButton(onOpenMultiplayer)
+                Spacer(Modifier.width(4.dp))
                 IconButton(onClick = { searchOpen = true; onSearchQueryChanged("") }, modifier = Modifier.size(42.dp)) {
                     Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.action_search_roms), tint = colors.text2, modifier = Modifier.size(22.dp))
                 }
@@ -217,6 +223,48 @@ fun WatermelonLibraryHeader(
             }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.line))
+    }
+}
+
+@Composable
+private fun MultiplayerHeaderButton(onClick: () -> Unit) {
+    val colors = watermelon
+    val shape = RoundedCornerShape(21.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+    Row(
+        modifier = Modifier
+            .height(42.dp)
+            .clip(shape)
+            .background(if (colors.isDark) colors.surface2 else colors.surface3)
+            .let { if (isFocused) it.border(2.dp, colors.red, shape) else it }
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .padding(start = 6.dp, end = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val nearby by MultiplayerNearby.rooms.collectAsState()
+        Box(
+            modifier = Modifier
+                .height(24.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(colors.surface3)
+                .padding(horizontal = 7.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("SELECT", color = colors.text2, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 9.sp, letterSpacing = 0.5.sp)
+        }
+        Spacer(Modifier.width(8.dp))
+        if (nearby.isNotEmpty()) {
+            Pulse()
+            Spacer(Modifier.width(8.dp))
+        }
+        Text(
+            text = stringResource(R.string.multiplayer_title),
+            color = colors.text,
+            fontFamily = SpaceGrotesk,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }
 
@@ -261,6 +309,7 @@ fun FilterChipsRow(
     selected: RomFilter,
     onFilterSelected: (RomFilter) -> Unit,
     modifier: Modifier = Modifier,
+    trailing: @Composable () -> Unit = {},
 ) {
     val items = listOf(
         RomFilter.ALL to R.string.rom_filter_all,
@@ -269,19 +318,25 @@ fun FilterChipsRow(
         RomFilter.DSIWARE_ONLY to R.string.rom_filter_dsiware,
         RomFilter.WITH_RETRO_ACHIEVEMENTS to R.string.rom_filter_retro_achievements,
     )
-    LazyRow(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = 4.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    Row(
+        modifier = modifier.fillMaxWidth().padding(top = 14.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        items(items) { (filter, label) ->
-            val prefix = if (filter == RomFilter.FAVORITES) "★ " else ""
-            WatermelonChip(
-                label = prefix + stringResource(label).uppercase(),
-                selected = filter == selected,
-                onClick = { onFilterSelected(filter) },
-            )
+        LazyRow(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(start = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            items(items) { (filter, label) ->
+                val prefix = if (filter == RomFilter.FAVORITES) "★ " else ""
+                WatermelonChip(
+                    label = prefix + stringResource(label).uppercase(),
+                    selected = filter == selected,
+                    onClick = { onFilterSelected(filter) },
+                )
+            }
         }
+        Box(Modifier.padding(end = 16.dp)) { trailing() }
     }
 }
 

@@ -6,19 +6,19 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import me.magnum.melonds.common.romprocessors.RomFileProcessorFactory
 import me.magnum.melonds.domain.model.rom.Rom
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
-import java.net.URLDecoder
-import java.text.Normalizer
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class BoxArtRepository @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val romFileProcessorFactory: RomFileProcessorFactory,
 ) {
     companion object {
         private const val BASE_URL = "https://thumbnails.libretro.com/Nintendo%20-%20Nintendo%20DS/Named_Boxarts/"
@@ -29,16 +29,22 @@ class BoxArtRepository @Inject constructor(
     private val cacheDir = File(context.filesDir, "boxart").apply { mkdirs() }
     private val indexFile = File(cacheDir, "named_boxarts_index.txt")
 
-    private val matchesFile = File(cacheDir, "matches_v2.json")
+    private val matchesFile = File(cacheDir, "matches_v3.json")
 
     private val mutex = Mutex()
-    private var indexEntries: List<IndexEntry>? = null
+    private var indexEntries: List<BoxArtMatcher.Entry>? = null
     private var matches: JSONObject? = null
 
-    private data class IndexEntry(val encodedName: String, val fullNormalized: String, val normalized: String, val tokens: Set<String>)
-
     suspend fun getBoxArtUrl(rom: Rom): String? = withContext(Dispatchers.IO) {
-        val key = rom.uri.toString()
+        val candidates = buildList {
+            add(rom.fileName.substringBeforeLast('.'))
+            rom.config.customName?.let { add(it) }
+            add(rom.name)
+        }.filter { it.isNotBlank() }
+        val gameCode = if (rom.isInstalledDsiWareShortcut) null else {
+            romFileProcessorFactory.getFileRomProcessorForFileName(rom.fileName)?.getRomInfo(rom)?.gameCode
+        }
+        val key = (listOf(rom.uri.toString(), gameCode.orEmpty()) + candidates).joinToString("\u0000")
         mutex.withLock {
             val storedMatches = loadMatches()
             val stored = storedMatches.optString(key, "")
@@ -47,13 +53,7 @@ class BoxArtRepository @Inject constructor(
             }
 
             val entries = loadIndex() ?: return@withContext null
-            val candidates = buildList {
-                add(rom.fileName.substringBeforeLast('.'))
-                rom.config.customName?.let { add(it) }
-                add(rom.name)
-            }.filter { it.isNotBlank() }
-
-            val match = findBestMatch(candidates, entries)
+            val match = BoxArtMatcher.findBestMatch(candidates, entries, gameCode)
             storedMatches.put(key, match?.encodedName ?: NO_MATCH)
             persistMatches(storedMatches)
             match?.let { BASE_URL + it.encodedName }
@@ -73,7 +73,7 @@ class BoxArtRepository @Inject constructor(
         runCatching { matchesFile.writeText(json.toString()) }
     }
 
-    private fun loadIndex(): List<IndexEntry>? {
+    private fun loadIndex(): List<BoxArtMatcher.Entry>? {
         indexEntries?.let { return it }
 
         val raw = if (indexFile.isFile && System.currentTimeMillis() - indexFile.lastModified() < INDEX_MAX_AGE_MS) {
@@ -84,16 +84,7 @@ class BoxArtRepository @Inject constructor(
             } ?: runCatching { indexFile.takeIf { it.isFile }?.readText() }.getOrNull()
         } ?: return null
 
-        val entries = raw.lineSequence()
-            .filter { it.isNotBlank() }
-            .map { encoded ->
-                val decoded = runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrDefault(encoded)
-                val fullName = decoded.removeSuffix(".png")
-                val cleanName = fullName.substringBefore(" (")
-                val normalized = normalize(cleanName)
-                IndexEntry(encoded, normalize(fullName, stripQualifiers = false), normalized, normalized.split(' ').filter { it.isNotEmpty() }.toSet())
-            }
-            .toList()
+        val entries = BoxArtMatcher.parseIndex(raw)
         indexEntries = entries
         return entries
     }
@@ -117,48 +108,4 @@ class BoxArtRepository @Inject constructor(
         }.getOrNull()
     }
 
-    private fun findBestMatch(candidates: List<String>, entries: List<IndexEntry>): IndexEntry? {
-        for (candidate in candidates) {
-            val fullNormalized = normalize(candidate, stripQualifiers = false)
-            if (fullNormalized.isBlank()) continue
-            entries.firstOrNull { it.fullNormalized == fullNormalized }?.let { return it }
-        }
-
-        for (candidate in candidates) {
-            val fullNormalized = normalize(candidate.substringBefore(" (").ifBlank { candidate })
-            if (fullNormalized.isBlank()) continue
-
-            entries.firstOrNull { it.normalized == fullNormalized }?.let { return it }
-        }
-
-        var best: IndexEntry? = null
-        var bestScore = 0.0
-        for (candidate in candidates) {
-            val tokens = normalize(candidate).split(' ').filter { it.isNotEmpty() }.toSet()
-            if (tokens.isEmpty()) continue
-            for (entry in entries) {
-                if (entry.tokens.isEmpty()) continue
-                val intersection = tokens.intersect(entry.tokens).size.toDouble()
-                if (intersection == 0.0) continue
-                val union = tokens.union(entry.tokens).size.toDouble()
-                val score = intersection / union
-                if (score > bestScore) {
-                    bestScore = score
-                    best = entry
-                }
-            }
-        }
-        return best.takeIf { bestScore >= 0.65 }
-    }
-
-    private fun normalize(value: String, stripQualifiers: Boolean = true): String {
-        val decomposed = Normalizer.normalize(value, Normalizer.Form.NFD)
-        return decomposed
-            .replace(Regex("\\p{M}+"), "")
-            .lowercase()
-            .let { if (stripQualifiers) it.replace(Regex("\\(.*?\\)|\\[.*?]"), " ") else it }
-            .replace(Regex("[^a-z0-9]+"), " ")
-            .trim()
-            .replace(Regex("\\s+"), " ")
-    }
 }

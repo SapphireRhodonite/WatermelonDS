@@ -69,6 +69,10 @@ class RomListViewModel @Inject constructor(
     private val boxArtRequestsInFlight = mutableSetOf<String>()
     private val boxArtSemaphore = kotlinx.coroutines.sync.Semaphore(4)
 
+    suspend fun prepareRom(rom: Rom): Rom? {
+        return if (rom.isInstalledDsiWareShortcut) rom else romsRepository.getRomAtUri(rom.uri)
+    }
+
     fun requestBoxArt(rom: Rom) {
         if (!settingsRepository.isRomCoverEnabled()) return
         if (rom.config.iconSource != RomIconSource.DEFAULT) return

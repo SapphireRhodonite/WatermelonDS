@@ -53,7 +53,8 @@ abstract class CompressedRomFileProcessor(private val context: Context, private 
                             config = if (romMetadata.isDSiWareTitle) RomConfig.forDsiWareTitle() else RomConfig.default(),
                             lastPlayed = null,
                             isDsiWareTitle = romMetadata.isDSiWareTitle,
-                            retroAchievementsHash = romMetadata.retroAchievementsHash
+                            retroAchievementsHash = romMetadata.retroAchievementsHash,
+                            cartridge = romMetadata.cartridge,
                         )
                     }
                 }
@@ -111,6 +112,15 @@ abstract class CompressedRomFileProcessor(private val context: Context, private 
             e.printStackTrace()
             null
         }
+    }
+
+    override fun getSourceRomInfo(rom: Rom): RomInfo? = try {
+        context.contentResolver.openInputStream(rom.uri)?.use { source ->
+            getNdsEntryStreamInFileStream(source)?.use { entry -> RomProcessor.getRomInfo(rom, entry) }
+        }
+    } catch (error: Exception) {
+        Log.w(TAG, "Could not read source cartridge header", error)
+        null
     }
 
     override suspend fun getRealRomUri(rom: Rom): Uri? {

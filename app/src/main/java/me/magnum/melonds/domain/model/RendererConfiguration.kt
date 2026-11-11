@@ -10,7 +10,7 @@ data class RendererConfiguration(
     val renderer: VideoRenderer,
     val videoFiltering: VideoFiltering,
     val threadedRendering: Boolean,
-    private val internalResolutionScaling: Int,
+    internal val internalResolutionScaling: Int,
     val rendererDebugToolsEnabled: Boolean,
     val rendererDebugBgObjEnabled: Boolean,
     val rendererDebugLatchTraceEnabled: Boolean,

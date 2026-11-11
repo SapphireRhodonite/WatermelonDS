@@ -1,0 +1,19 @@
+<resources>
+    <string name="phantom_title">Play with a temporary clone</string>
+    <string name="phantom_ds_only">Choose a DS cartridge in DS mode with the DLDI card and GBA cartridge disconnected.</string>
+    <string name="phantom_conflict">The save changed outside this session. Both copies have been preserved.</string>
+    <string name="phantom_busy">Close the running game before opening or saving a clone session.</string>
+    <string name="phantom_save_failed">Could not verify the written save. The previous save and the result are available for recovery.</string>
+    <string name="phantom_link_error">Could not connect the two players (code %1$d).</string>
+    <string name="phantom_to_peer">Main → Clone</string>
+    <string name="phantom_to_primary">Clone → Main</string>
+    <string name="phantom_playing_main">Playing on main</string>
+    <string name="phantom_playing_clone">Playing on clone</string>
+    <string name="phantom_unavailable">A player disconnected before the session finished.</string>
+    <string name="phantom_result_title">Do you want to keep the save?</string>
+    <string name="phantom_result_body">Your original save hasn’t been changed yet. Choose Keep main game to overwrite it with the main player’s in-game save. The clone’s save is always discarded.</string>
+    <string name="phantom_keep">Keep main game</string>
+    <string name="phantom_discard">Discard session</string>
+    <string name="phantom_kept">Main save verified</string>
+    <string name="phantom_discarded">Session discarded</string>
+</resources>

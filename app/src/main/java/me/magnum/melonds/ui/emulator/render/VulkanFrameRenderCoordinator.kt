@@ -299,6 +299,16 @@ class VulkanFrameRenderCoordinator(
                     }
                 }
             }
+
+            val pendingSurfaces = synchronized(surfacesLock) {
+                managedSurfaces.mapNotNull { (surfaceView, managedSurface) ->
+                    managedSurface.pendingSurface?.let { surfaceView to it }
+                }
+            }
+            pendingSurfaces.forEach { (surfaceView, surface) ->
+                val (width, height) = surfaceView.getCurrentSurfaceSize()
+                attachSurface(surfaceView, surface, width, height)
+            }
         }
 
         private fun getActiveHandler(): Handler? {

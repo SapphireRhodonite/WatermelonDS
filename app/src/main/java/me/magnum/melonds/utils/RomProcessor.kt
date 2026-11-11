@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import androidx.core.graphics.createBitmap
 import me.magnum.melonds.common.Crc32
+import me.magnum.melonds.domain.model.CartridgeId
 import me.magnum.melonds.domain.model.RomInfo
 import me.magnum.melonds.domain.model.RomMetadata
 import me.magnum.melonds.domain.model.rom.Rom
@@ -88,6 +89,7 @@ object RomProcessor {
 			developerName,
 			isDsiWareTitle,
 			retroAchievementsHash,
+			CartridgeId(gameCode, header[0x1E].toInt() and 0xFF),
 		)
 	}
 
@@ -143,15 +145,12 @@ object RomProcessor {
 	}
 
 	fun getRomInfo(rom: Rom, inputStream: InputStream): RomInfo? {
-		val romHeader = ByteArray(0x200)
-		if (inputStream.read(romHeader) < 0x200) {
-			return null
-		}
+		val romHeader = ForwardRomSectionReader(inputStream).readSection(0, 0x200) ?: return null
 
 		val gameTitle = romHeader.decodeToString(endIndex = 12)
 		val gameCode = romHeader.decodeToString(startIndex = 12, endIndex = 12 + 4)
 		val headerChecksum = Crc32.compute(romHeader)
-		return RomInfo(gameCode, headerChecksum, gameTitle, rom.name)
+		return RomInfo(gameCode, headerChecksum, gameTitle, rom.name, romHeader[0x1E].toInt() and 0xFF)
 	}
 
 	private fun byteArrayToInt(intData: ByteArray, offset: Int = 0): Int {

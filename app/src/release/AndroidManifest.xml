@@ -18,6 +18,7 @@
                 <action android:name="${applicationId}.SET_JIT" />
                 <action android:name="${applicationId}.SET_FRAMESKIP" />
                 <action android:name="${applicationId}.GET_FPS" />
+                <action android:name="${applicationId}.MULTIPLAYER_STATUS" />
                 <action android:name="${applicationId}.START_AUDIO_PCM_CAPTURE" />
                 <action android:name="${applicationId}.DUMP_AUDIO_PCM_CAPTURE" />
                 <action android:name="${applicationId}.GRANT_AUDIO_PCM_CAPTURE_READ" />

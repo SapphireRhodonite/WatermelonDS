@@ -9,5 +9,6 @@ interface RomFileProcessor {
     fun getRomFromUri(romUri: Uri, parentUri: Uri?): Rom?
     fun getRomIcon(rom: Rom): Bitmap?
     fun getRomInfo(rom: Rom): RomInfo?
+    fun getSourceRomInfo(rom: Rom): RomInfo? = getRomInfo(rom)
     suspend fun getRealRomUri(rom: Rom): Uri?
 }

@@ -93,7 +93,7 @@ class RomSaveFileManager @Inject constructor(
         return totalBytes > 0
     }
 
-    private fun findExistingSaveFile(rom: Rom): DocumentFile? {
+    internal fun findExistingSaveFile(rom: Rom): DocumentFile? {
         val rootDocument = getSaveRootDocument(rom)
         return rootDocument.findFile(resolveSaveFileName(rom))
     }
@@ -132,14 +132,14 @@ class RomSaveFileManager @Inject constructor(
         }
     }
 
-    private fun openInputStream(uri: Uri): InputStream = if (uri.scheme == "file") {
+    internal fun openInputStream(uri: Uri): InputStream = if (uri.scheme == "file") {
         FileInputStream(uri.path?.let(::File) ?: throw IllegalStateException("Invalid file URI: $uri"))
     } else {
         context.contentResolver.openInputStream(uri)
             ?: throw IllegalStateException("Could not open input stream: $uri")
     }
 
-    private fun openOutputStream(uri: Uri) = if (uri.scheme == "file") {
+    internal fun openOutputStream(uri: Uri) = if (uri.scheme == "file") {
         FileOutputStream(uri.path?.let(::File) ?: throw IllegalStateException("Invalid file URI: $uri"), false)
     } else {
         context.contentResolver.openOutputStream(uri, "wt")

@@ -25,6 +25,8 @@ import me.magnum.melonds.impl.emulator.debug.RendererDebugBridge
 import me.magnum.melonds.impl.emulator.debug.RendererDebugCaptureKind
 import me.magnum.melonds.impl.emulator.debug.RendererDebugCaptureLogger
 import me.magnum.melonds.impl.emulator.debug.RendererDebugCapturePresets
+import me.magnum.melonds.multiplayer.MultiplayerRoom
+import me.magnum.melonds.multiplayer.MultiplayerSession
 import me.magnum.melonds.ui.emulator.EmulatorActivity
 import java.io.File
 import java.util.LinkedHashSet
@@ -70,6 +72,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             context.debugCommandAction(ACTION_SET_FRAMESKIP_SUFFIX) -> handleSetFrameskip(entryPoint, intent)
             context.debugCommandAction(ACTION_SET_MUTE_ON_FAST_FORWARD_SUFFIX) -> handleSetMuteOnFastForward(entryPoint, intent)
             context.debugCommandAction(ACTION_GET_FPS_SUFFIX) -> handleGetFps()
+            context.debugCommandAction(ACTION_MULTIPLAYER_STATUS_SUFFIX) -> handleMultiplayerStatus()
             context.debugCommandAction(ACTION_START_AUDIO_PCM_CAPTURE_SUFFIX) -> handleStartAudioPcmCapture(context, intent)
             context.debugCommandAction(ACTION_DUMP_AUDIO_PCM_CAPTURE_SUFFIX) -> handleDumpAudioPcmCapture(context, intent)
             context.debugCommandAction(ACTION_GRANT_AUDIO_PCM_CAPTURE_READ_SUFFIX) -> handleGrantAudioPcmCaptureRead(context, intent)
@@ -79,8 +82,8 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             context.debugCommandAction(ACTION_LAUNCH_ROM_SUFFIX) -> handleLaunchRom(context, intent)
             context.debugCommandAction(ACTION_WAIT_ROM_READY_SUFFIX) -> handleWaitRomReady(intent)
             context.debugCommandAction(ACTION_SET_DEBUG_PAUSE_SUFFIX) -> handleSetDebugPause(intent)
-            context.debugCommandAction(ACTION_STEP_FRAME_SUFFIX) -> handleStepFrame(entryPoint, intent)
-            context.debugCommandAction(ACTION_STEP_FRAMES_SUFFIX) -> handleStepFrame(entryPoint, intent)
+            context.debugCommandAction(ACTION_STEP_FRAME_SUFFIX) -> handleStepFrame(intent)
+            context.debugCommandAction(ACTION_STEP_FRAMES_SUFFIX) -> handleStepFrame(intent)
             context.debugCommandAction(ACTION_DUMP_RENDERER_CAPTURE_SUFFIX) -> handleDumpRendererCapture(context, entryPoint, intent)
             context.debugCommandAction(ACTION_ARM_EXACT_LIVE_GUIDE_SUFFIX) -> handleArmExactLiveGuide(intent)
             context.debugCommandAction(ACTION_GET_EXACT_LIVE_GUIDE_SUFFIX) -> handleGetExactLiveGuide()
@@ -242,6 +245,17 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
 
     private fun handleGetFps() {
         Log.w(TAG, "action=get_fps mode=release fps=${MelonEmulator.getFPS()} ${MelonEmulator.getVulkanFrameskipStats()}")
+    }
+
+    private suspend fun handleMultiplayerStatus() {
+        val room = MultiplayerRoom.state.value
+        val info = room?.info
+        val summary = org.json.JSONObject()
+            .put("role", room?.role?.name ?: "NONE")
+            .put("linked", room?.linked == true)
+            .put("closed", room?.closed == true)
+            .put("room", info?.toJson())
+        Log.w(TAG, "action=multiplayer_status session=${MultiplayerSession.status()} room=$summary")
     }
 
     private fun handleStartAudioPcmCapture(context: Context, intent: Intent) {
@@ -526,14 +540,15 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         Log.w(TAG, "action=set_debug_pause mode=release paused=${if (paused) 1 else 0}")
     }
 
-    private suspend fun handleStepFrame(entryPoint: DebugCommandEntryPoint, intent: Intent) {
+    private suspend fun handleStepFrame(intent: Intent) {
         val frames = intent.firstNullableIntExtra(EXTRA_STEP_FRAMES, EXTRA_FRAMES, EXTRA_VALUE)
             ?.coerceAtLeast(1)
             ?: 1
         val timeoutMs = intent.firstNullableIntExtra(EXTRA_TIMEOUT_MS, EXTRA_DURATION_MS, EXTRA_RESUME_MS)
             ?.coerceAtLeast(1)
             ?: 5_000
-        val renderer = entryPoint.settingsRepository().getCurrentVideoRenderer()
+        val nativeRenderer = MelonEmulator.getCurrentRenderer()
+        val renderer = VideoRenderer.entries.first { it.renderer == nativeRenderer }
         val startFrame = RendererDebugBridge.getCurrentFrameIndexForDebug()
         require(frames <= 10_000) { "Frame step budget exceeds 10000" }
         val expectedFrame = Math.addExact(startFrame, frames)
@@ -1460,6 +1475,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
         private const val ACTION_SET_FRAMESKIP_SUFFIX = "SET_FRAMESKIP"
         private const val ACTION_SET_MUTE_ON_FAST_FORWARD_SUFFIX = "SET_MUTE_ON_FAST_FORWARD"
         private const val ACTION_GET_FPS_SUFFIX = "GET_FPS"
+        private const val ACTION_MULTIPLAYER_STATUS_SUFFIX = "MULTIPLAYER_STATUS"
         private const val ACTION_START_AUDIO_PCM_CAPTURE_SUFFIX = "START_AUDIO_PCM_CAPTURE"
         private const val ACTION_DUMP_AUDIO_PCM_CAPTURE_SUFFIX = "DUMP_AUDIO_PCM_CAPTURE"
         private const val ACTION_GRANT_AUDIO_PCM_CAPTURE_READ_SUFFIX = "GRANT_AUDIO_PCM_CAPTURE_READ"
@@ -1499,6 +1515,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             || action == context.debugCommandAction(ACTION_SET_FRAMESKIP_SUFFIX)
             || action == context.debugCommandAction(ACTION_SET_MUTE_ON_FAST_FORWARD_SUFFIX)
             || action == context.debugCommandAction(ACTION_GET_FPS_SUFFIX)
+            || action == context.debugCommandAction(ACTION_MULTIPLAYER_STATUS_SUFFIX)
             || action == context.debugCommandAction(ACTION_START_AUDIO_PCM_CAPTURE_SUFFIX)
             || action == context.debugCommandAction(ACTION_DUMP_AUDIO_PCM_CAPTURE_SUFFIX)
             || action == context.debugCommandAction(ACTION_GRANT_AUDIO_PCM_CAPTURE_READ_SUFFIX)

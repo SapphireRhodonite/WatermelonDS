@@ -1953,7 +1953,7 @@ class SharedPreferencesSettingsRepository(
             renderer = renderer,
             videoFiltering = effectiveFiltering,
             threadedRendering = threadedRendering,
-            internalResolutionScaling = romConfig.internalResolutionScaling ?: baseConfiguration.resolutionScaling,
+            internalResolutionScaling = romConfig.internalResolutionScaling ?: baseConfiguration.internalResolutionScaling,
             retroArchShader = if (effectiveFiltering == VideoFiltering.RETROARCH) retroArchShader else EmptyRetroArchShaderConfiguration,
         )
     }

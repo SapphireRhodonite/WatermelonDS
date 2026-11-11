@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import me.magnum.melonds.MelonDSAndroidInterface
+import me.magnum.melonds.multiplayer.MultiplayerSession
 import me.magnum.melonds.common.romprocessors.RomFileProcessorFactory
 import me.magnum.melonds.domain.model.ConfigurationDirResult
 import me.magnum.melonds.domain.model.ConsoleType
@@ -26,7 +27,8 @@ class EmulatorLaunchPreconditionChecker(
 
     suspend fun checkRomLaunchPreconditions(candidate: Rom): RomLaunchPreconditionCheckResult = withContext(Dispatchers.IO) {
         val rom = candidate.copy(resolvedDsiProfile = settingsRepository.getDsiProfile(candidate.config.dsiProfileId))
-        val renderer = settingsRepository.getEffectiveVideoRenderer(rom.config)
+        val renderer = if (MultiplayerSession.active) VideoRenderer.VULKAN
+            else settingsRepository.getEffectiveVideoRenderer(rom.config)
         getRendererValidationFailureOrNull(renderer)?.let {
             return@withContext when (it) {
                 RendererValidationFailure.UNSUPPORTED -> RomLaunchPreconditionCheckResult.RendererUnsupported(VideoRenderer.VULKAN)
@@ -54,7 +56,9 @@ class EmulatorLaunchPreconditionChecker(
     }
 
     suspend fun checkFirmwareLaunchPreconditions(consoleType: ConsoleType): FirmwareLaunchPreconditionCheckResult = withContext(Dispatchers.IO) {
-        getRendererValidationFailureOrNull(settingsRepository.getCurrentVideoRenderer())?.let {
+        val renderer = if (MultiplayerSession.active) VideoRenderer.VULKAN
+            else settingsRepository.getCurrentVideoRenderer()
+        getRendererValidationFailureOrNull(renderer)?.let {
             return@withContext when (it) {
                 RendererValidationFailure.UNSUPPORTED -> FirmwareLaunchPreconditionCheckResult.RendererUnsupported(VideoRenderer.VULKAN)
                 RendererValidationFailure.INIT_FAILED -> FirmwareLaunchPreconditionCheckResult.RendererInitFailed(VideoRenderer.VULKAN)

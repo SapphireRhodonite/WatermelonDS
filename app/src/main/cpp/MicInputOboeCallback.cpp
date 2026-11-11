@@ -1,5 +1,6 @@
 #include "MicInputOboeCallback.h"
 #include "types.h"
+#include <algorithm>
 
 #define MIC_GAIN 10
 
@@ -41,7 +42,8 @@ MicInputOboeCallback::onAudioReady(oboe::AudioStream *stream, void *audioData, i
 
         float s = (float)s1 + ((s2 - s1) * res_timer);
 
-        buffer[bufferOffset] = (s16)(round(s) * MIC_GAIN);
+        buffer[bufferOffset] = static_cast<s16>(std::clamp(
+            round(s) * MIC_GAIN, -32768.0f, 32767.0f));
         bufferOffset++;
         if (bufferOffset >= maxlen)
             bufferOffset = 0;

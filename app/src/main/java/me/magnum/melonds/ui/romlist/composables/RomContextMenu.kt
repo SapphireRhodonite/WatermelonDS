@@ -48,6 +48,7 @@ fun RomContextMenu(
     onToggleFavorite: (Rom) -> Unit,
     onShowDetails: (Rom) -> Unit,
     onSendSaveFile: (Rom) -> Unit,
+    onPlayWithClone: (Rom) -> Unit,
     onImportSaveFile: (Rom) -> Unit,
     raCoverUrl: String? = null,
     useCoverArt: Boolean = true,
@@ -122,6 +123,15 @@ fun RomContextMenu(
                     label = stringResource(R.string.rom_action_details),
                     onClick = {
                         onShowDetails(rom)
+                        onDismiss()
+                    },
+                )
+                ContextItem(
+                    icon = Icons.Filled.Share,
+                    iconTint = colors.text2,
+                    label = stringResource(R.string.phantom_title),
+                    onClick = {
+                        onPlayWithClone(rom)
                         onDismiss()
                     },
                 )

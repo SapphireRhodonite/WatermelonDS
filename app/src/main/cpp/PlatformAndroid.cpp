@@ -18,6 +18,7 @@
 
 #include <cassert>
 #include <chrono>
+#include <cstring>
 #include <dlfcn.h>
 #include <filesystem>
 #include <stdio.h>
@@ -26,6 +27,7 @@
 #include <semaphore.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <sys/system_properties.h>
 #include "pcap/pcap.h"
 #include "Platform.h"
 #include "MelonDS.h"
@@ -35,6 +37,9 @@
 #include "MelonInstance.h"
 #include "MelonLog.h"
 #include "net/MPInterface.h"
+#include "MultiplayerSession.h"
+#include "EmulationThreadCpuPolicy.h"
+#include "ThreadLifecycleScope.h"
 
 using namespace melonDS;
 
@@ -333,6 +338,7 @@ namespace Platform
     {
         AndroidThread* data = new AndroidThread;
         data->Func = func;
+        ThreadLifecycleScope creation(MelonDSAndroid::setEmulationThreadCreationActive);
         pthread_create(&data->ID, nullptr, ThreadEntry, data);
         return (Thread*) data;
     }
@@ -512,56 +518,82 @@ namespace Platform
 
     void MP_Begin(void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        MPInterface::Get().Begin(emulatorInstance->getInstanceId());
+        MelonDSAndroid::Multiplayer::Begin(userdata);
     }
 
     void MP_End(void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        MPInterface::Get().End(emulatorInstance->getInstanceId());
+        MelonDSAndroid::Multiplayer::End(userdata);
     }
 
     int MP_SendPacket(u8* data, int len, u64 timestamp, void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        return MPInterface::Get().SendPacket(emulatorInstance->getInstanceId(), data, len, timestamp);
+        return MelonDSAndroid::Multiplayer::Send(userdata, 0, data, len, timestamp);
     }
 
     int MP_RecvPacket(u8* data, u64* timestamp, void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        return MPInterface::Get().RecvPacket(emulatorInstance->getInstanceId(), data, timestamp);
+        return MelonDSAndroid::Multiplayer::Receive(userdata, false, data, timestamp);
     }
 
     int MP_SendCmd(u8* data, int len, u64 timestamp, void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        return MPInterface::Get().SendCmd(emulatorInstance->getInstanceId(), data, len, timestamp);
+        return MelonDSAndroid::Multiplayer::Send(userdata, 1, data, len, timestamp);
     }
 
     int MP_SendReply(u8* data, int len, u64 timestamp, u16 aid, void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        return MPInterface::Get().SendReply(emulatorInstance->getInstanceId(), data, len, timestamp, aid);
+        return MelonDSAndroid::Multiplayer::Send(userdata, 2, data, len, timestamp, aid);
     }
 
     int MP_SendAck(u8* data, int len, u64 timestamp, void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        return MPInterface::Get().SendAck(emulatorInstance->getInstanceId(), data, len, timestamp);
+        return MelonDSAndroid::Multiplayer::Send(userdata, 3, data, len, timestamp);
+    }
+
+    int MP_SendProgress(u64 timestamp, void* userdata)
+    {
+        return MelonDSAndroid::Multiplayer::Send(userdata, 4, nullptr, 0, timestamp);
+    }
+
+    bool MP_ConservativeAck(void* userdata)
+    {
+        return MelonDSAndroid::Multiplayer::ConservativeAck(userdata);
     }
 
     int MP_RecvHostPacket(u8* data, u64* timestamp, void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        return MPInterface::Get().RecvHostPacket(emulatorInstance->getInstanceId(), data, timestamp);
+        return MelonDSAndroid::Multiplayer::Receive(userdata, true, data, timestamp);
     }
 
     u16 MP_RecvReplies(u8* data, u64 timestamp, u16 aidmask, void* userdata)
     {
-        auto emulatorInstance = (MelonDSAndroid::MelonInstance*) userdata;
-        return MPInterface::Get().RecvReplies(emulatorInstance->getInstanceId(), data, timestamp, aidmask);
+        return MelonDSAndroid::Multiplayer::Replies(userdata, data, timestamp, aidmask);
+    }
+
+    WMServiceInfo MP_WMInfo(void* userdata)
+    {
+        return MelonDSAndroid::Multiplayer::WMInfo(userdata);
+    }
+
+    void MP_WMAbort(void* userdata)
+    {
+        MelonDSAndroid::Multiplayer::WMAbort(userdata);
+    }
+
+    u16 MP_WMSend(u16 peers, const u8* data, u16 length, void* userdata)
+    {
+        return MelonDSAndroid::Multiplayer::WMSend(userdata, peers, data, length);
+    }
+
+    int MP_WMReceive(WMServicePacket& packet, void* userdata)
+    {
+        return MelonDSAndroid::Multiplayer::WMReceive(userdata, packet);
+    }
+
+    void MP_WMReset(void* userdata)
+    {
+        MelonDSAndroid::Multiplayer::WMReset(userdata);
     }
 
     int Net_SendPacket(u8* data, int len, void* userdata)

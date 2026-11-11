@@ -54,6 +54,14 @@ class MelonDSApplication : Application(), Configuration.Provider {
     override fun onCreate() {
         if (me.magnum.melonds.ui.settings.RestartAppActivity.isRestartProcess(this)) return
         super.onCreate()
+        val processName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) getProcessName() else {
+            getSystemService(android.app.ActivityManager::class.java).runningAppProcesses
+                ?.firstOrNull { it.pid == android.os.Process.myPid() }?.processName
+        }
+        if (processName == "${packageName}:phantom_primary" || processName == "${packageName}:phantom_peer") {
+            MelonDSAndroidInterface.setup(UriFileHandler(this, uriHandler), settingsRepository.getVulkanDriverConfiguration(applicationInfo.nativeLibraryDir))
+            return
+        }
         giveLibrashaderACacheDirectory()
         createNotificationChannels()
         applyTheme()

@@ -16,6 +16,7 @@ sealed class EmulatorEvent {
             GBAModeNotSupported,
             BadExceptionRegion,
             PowerOff,
+            WirelessUnsupported,
         }
     }
 }

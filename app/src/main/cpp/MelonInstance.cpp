@@ -1,9 +1,16 @@
+#include "MultiplayerSession.h"
+#include "EmulationThreadCpuPolicy.h"
+#include "performancehint/PerformanceHintWorker.h"
 #include <ctime>
 #include <algorithm>
 #include <chrono>
 #include <android/log.h>
 #include <android/trace.h>
 #include <cstring>
+#include <cstdlib>
+#include <cerrno>
+#include <cstdio>
+#include <fcntl.h>
 #include <sys/system_properties.h>
 #include <limits>
 #include <sstream>
@@ -1543,7 +1550,7 @@ MelonInstance::MelonInstance(int instanceId, std::shared_ptr<EmulatorConfigurati
     lastCompletedVulkanScale(1),
     screenshotRenderer(std::move(screenshotRenderer)),
     consoleType(consoleType),
-    rewindManager(configuration->rewindEnabled, configuration->rewindLengthSeconds, configuration->rewindCaptureSpacingSeconds, kRewindBufferSize, kRewindScreenshotSize),
+    rewindManager(configuration->rewindEnabled && !Multiplayer::Active(), configuration->rewindLengthSeconds, configuration->rewindCaptureSpacingSeconds, kRewindBufferSize, kRewindScreenshotSize),
     vulkanRuntimeConfigLogged(false),
     vulkanRuntimeFailureHandled(false),
     vulkanPrepareFailureCount(0),
@@ -1585,6 +1592,11 @@ MelonInstance::MelonInstance(int instanceId, std::shared_ptr<EmulatorConfigurati
         firmwareSave = std::make_unique<SaveManager>(firmwarePathString);
     }
 
+    auto& firmwareHeader = nds->GetFirmware().GetHeader();
+    originalMultiplayerMac = firmwareHeader.MacAddr;
+    multiplayerFirmwareIdentity = Multiplayer::CopyMac(firmwareHeader.MacAddr.data());
+    if (multiplayerFirmwareIdentity) firmwareHeader.UpdateChecksum();
+
     // All instances have a RetroAchievements manager, but only the first instance will actually load achievements
     retroAchievementsManager = std::make_shared<RetroAchievements::RetroAchievementsManager>(nds);
 
@@ -1601,6 +1613,7 @@ MelonInstance::~MelonInstance()
     vulkanOutput = nullptr;
     net->UnregisterInstance(instanceId);
     delete nds;
+    Multiplayer::GameStopped(this);
 }
 
 bool MelonInstance::loadRom(std::string romPath, std::string sramPath)
@@ -1873,15 +1886,26 @@ bool MelonInstance::precompileVulkanPipelines(const VulkanSurfaceConfig& retroAr
     return true;
 }
 
+bool MelonInstance::deferMultiplayerFrameWait(u64 delay)
+{
+    return nds && nds->DeferWMFrameWait(delay);
+}
+
+bool MelonInstance::isWifiClient() const
+{
+    return Multiplayer::Active() && nds->Wifi.IsClient();
+}
+
 void MelonInstance::start()
 {
     auto cart = nds->NDSCartSlot.GetCart();
+    Multiplayer::GameStarted(this, cart == nullptr);
     if (nds->ConsoleType == 1 && cart != nullptr && cart->GetHeader().IsDSiWare() && !currentConfiguration->showBootScreen)
     {
         auto dsi = (DSi*) nds;
         DSiSupport::SetupDSiDirectBoot(dsi);
     }
-    else if (!currentConfiguration->showBootScreen || nds->NeedsDirectBoot())
+    else if (cart != nullptr && (!currentConfiguration->showBootScreen || nds->NeedsDirectBoot()))
     {
         // This seems to be unused, but it's required
         std::string romName;
@@ -2000,6 +2024,7 @@ void MelonInstance::kickFrameTail(const FrameTailJob& job)
         if (!frameTailWorker.joinable())
         {
             frameTailWorkerExit = false;
+            melonDS::ThreadLifecycleScope creation(setEmulationThreadCreationActive);
             frameTailWorker = std::thread([this] { frameTailWorkerLoop(); });
         }
         frameTailJob = job;
@@ -2876,6 +2901,126 @@ MelonInstance::VulkanFrameskipStats MelonInstance::getVulkanFrameskipStats() con
     };
 }
 
+void MelonInstance::recordProductTiming(u64 frameId, u32 kind)
+{
+    if (!productTimingActive) return;
+    if (productTimingSamples.size() == ProductTimingCapacity)
+    {
+        productTimingLost++;
+        return;
+    }
+    productTimingSamples.push_back({frameId, PerfNowNs(), kind});
+}
+
+void MelonInstance::processProductTimingRequest()
+{
+    char value[PROP_VALUE_MAX]{};
+    if (__system_property_get("debug.melonds.product_timing", value) <= 0) return;
+    const std::string request(value);
+    auto operationLock = acquireVulkanPresentationOperation();
+    if (request == productTimingRequest) return;
+    productTimingRequest = request;
+    const bool start = request.rfind("start:", 0) == 0;
+    const bool finish = request.rfind("stop:", 0) == 0;
+    const size_t prefix = start ? 6 : 5;
+    if ((!start && !finish) || request.size() <= prefix
+        || request.find_first_not_of("0123456789", prefix) != std::string::npos)
+    {
+        Log(LogLevel::Warn, "ProductTiming rejected invalid request\n");
+        return;
+    }
+    char* end = nullptr;
+    errno = 0;
+    const u64 token = std::strtoull(value + prefix, &end, 10);
+    if (!token || errno == ERANGE || !end || *end)
+    {
+        Log(LogLevel::Warn, "ProductTiming rejected invalid token\n");
+        return;
+    }
+    if (start)
+    {
+        if (productTimingActive || token == productTimingToken)
+        {
+            Log(LogLevel::Warn, "ProductTiming rejected reused token or active window\n");
+            return;
+        }
+        try
+        {
+            productTimingSamples.clear();
+            productTimingSamples.reserve(ProductTimingCapacity);
+        }
+        catch (const std::bad_alloc&)
+        {
+            Log(LogLevel::Warn, "ProductTiming allocation failed\n");
+            return;
+        }
+        productTimingToken = token;
+        productTimingLost = 0;
+        productTimingStartPresentations = vulkanPresentacionesTotal.load(std::memory_order_relaxed);
+        productTimingStartProducts = vulkanPresentacionesProductoNuevo.load(std::memory_order_relaxed);
+        productTimingStartRenderSkipped = vulkanFrameskipRenderSkipped.load(std::memory_order_relaxed);
+        productTimingStartFrame = vulkanPresenterUltimoProductoId;
+        productTimingStartNs = PerfNowNs();
+        productTimingActive = true;
+        Log(LogLevel::Info, "ProductTiming started token=%llu startNs=%llu\n",
+            static_cast<unsigned long long>(token), static_cast<unsigned long long>(productTimingStartNs));
+        return;
+    }
+    if (!productTimingActive || token != productTimingToken)
+    {
+        Log(LogLevel::Warn, "ProductTiming rejected unmatched stop\n");
+        return;
+    }
+    const u64 endNs = PerfNowNs();
+    const u64 endPresentations = vulkanPresentacionesTotal.load(std::memory_order_relaxed);
+    const u64 endProducts = vulkanPresentacionesProductoNuevo.load(std::memory_order_relaxed);
+    const u64 renderSkipped = vulkanFrameskipRenderSkipped.load(std::memory_order_relaxed);
+    const u64 startNs = productTimingStartNs;
+    const u64 startPresentations = productTimingStartPresentations;
+    const u64 startProducts = productTimingStartProducts;
+    const u64 startRenderSkipped = productTimingStartRenderSkipped;
+    const u64 startFrame = productTimingStartFrame;
+    const u64 lost = productTimingLost;
+    productTimingActive = false;
+    std::vector<ProductTimingSample> samples;
+    samples.swap(productTimingSamples);
+    operationLock.unlock();
+    const std::string path = internalFilesDir + "/product-timing-" + std::to_string(getpid())
+        + "-" + std::to_string(token) + ".csv";
+    const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    FILE* stream = fd >= 0 ? fdopen(fd, "w") : nullptr;
+    if (!stream)
+    {
+        if (fd >= 0) close(fd);
+        Log(LogLevel::Warn, "ProductTiming file open failed token=%llu\n", static_cast<unsigned long long>(token));
+        return;
+    }
+    std::unique_ptr<FILE, decltype(&std::fclose)> file(stream, &std::fclose);
+    unsigned failures = 0;
+    const auto metadata = [&](const char* key, u64 number) {
+        failures += std::fprintf(file.get(), "#%s=%llu\n", key, static_cast<unsigned long long>(number)) < 0;
+    };
+    metadata("token", token);
+    metadata("startNs", startNs);
+    metadata("endNs", endNs);
+    metadata("startPresentations", startPresentations);
+    metadata("endPresentations", endPresentations);
+    metadata("startProducts", startProducts);
+    metadata("endProducts", endProducts);
+    metadata("endRenderSkipped", renderSkipped);
+    metadata("startRenderSkipped", startRenderSkipped);
+    metadata("startFrame", startFrame);
+    metadata("lost", lost);
+    failures += std::fprintf(file.get(), "frameId,timeNs,kind\n") < 0;
+    for (const auto& row : samples)
+        failures += std::fprintf(file.get(), "%llu,%llu,%u\n", static_cast<unsigned long long>(row.frameId),
+            static_cast<unsigned long long>(row.timeNs), row.kind) < 0;
+    failures += std::fflush(file.get()) != 0;
+    failures += std::fclose(file.release()) != 0;
+    Log(LogLevel::Info, "ProductTiming complete token=%llu count=%zu lost=%llu writeFailures=%u file=%s\n",
+        static_cast<unsigned long long>(token), samples.size(), static_cast<unsigned long long>(lost), failures, path.c_str());
+}
+
 u32 MelonInstance::drsRunPercentilC(u32 pct) const noexcept
 {
 
@@ -3121,7 +3266,7 @@ void MelonInstance::requestRtcSync()
     rtcSyncRequested.store(true, std::memory_order_release);
 }
 
-u32 MelonInstance::runFrame(bool frameskipSolicitado)
+u32 MelonInstance::runFrame(bool frameskipSolicitado, u64 wmFrameDeadline)
 {
     if (rtcSyncRequested.load(std::memory_order_acquire)
         && rtcSyncRequested.exchange(false, std::memory_order_acq_rel))
@@ -3464,6 +3609,15 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado)
         frameQueue.validateRenderFrame(renderFrame, screenWidth, screenHeight * 2, frameBackend);
     recordSetupPhase(vulkanSetupPrepareCpuWindow);
 
+    std::pair<VulkanOutput*, Frame*> snapshotDependency{
+        vulkanOutput.get(), renderFrame};
+    VulkanRenderer3D* snapshotDependencyRenderer = nullptr;
+    auto snapshotDependencyScope = MakeScopeExit([&]() {
+        if (snapshotDependencyRenderer != nullptr
+            && !snapshotDependencyRenderer->SetSubmissionDependency(nullptr))
+            handleVulkanRuntimeFailure("snapshot submission dependency");
+    });
+
     if (currentRenderer == Renderer::Vulkan)
     {
         if (renderFrame != nullptr)
@@ -3494,6 +3648,8 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado)
                 }
                 const bool usePreRunSnapshot =
                     (prioritizeCurrentPresentation && !frameQueuePolicy.AllowDropForDeadline)
+                    || (renderer3D.UsesStructured2DMetadata()
+                        && renderer3D.GetColorTargetWidth() == 256u)
                     || vulkanStructuredCaptureGateFrames > 0
                     || (!snapPosRun && streamingReciente
                         && currentConfiguration != nullptr);
@@ -3506,10 +3662,28 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado)
 
                 if (usePreRunSnapshot)
                 {
-                    (void)vulkanOutput->captureRenderer3dSnapshot(
+                    const bool deferSnapshot = !asyncFrameTailEnabled
+                        && !fastForwardActive && !frameQueuePolicy.AllowDropForDeadline
+                        && vulkanSurfaceMaxPacked.load(std::memory_order_relaxed) != 0u
+                        && VulkanContext::Get().SupportsTimelineSemaphores();
+                    const bool captured = vulkanOutput->captureRenderer3dSnapshot(
                         renderFrame,
                         renderer3D,
-                        nds->GPU.GPU3D.RenderScreenSwapAt3D);
+                        nds->GPU.GPU3D.RenderScreenSwapAt3D,
+                        deferSnapshot);
+                    if (captured && deferSnapshot)
+                    {
+                        snapshotDependencyRenderer = &renderer3D;
+                        if (!renderer3D.SetSubmissionDependency([](void* context) {
+                                const auto& dependency = *static_cast<
+                                    std::pair<VulkanOutput*, Frame*>*>(context);
+                                return dependency.first->flushRenderer3dSnapshot(dependency.second);
+                            }, &snapshotDependency))
+                        {
+                            handleVulkanRuntimeFailure("snapshot submission dependency");
+                            return 0;
+                        }
+                    }
                 }
             }
         }
@@ -3558,7 +3732,9 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado)
 
             auto& r3dPre = nds->GPU.GPU3D.GetCurrentRenderer();
             auto* r3dVkPre = dynamic_cast<melonDS::VulkanRenderer3D*>(&r3dPre);
-            if (r3dVkPre != nullptr && r3dVkPre->GetScaleFactor() == 1)
+            vulkanFaithfulStashPreRunValido = false;
+            if (r3dVkPre != nullptr && r3dVkPre->GetScaleFactor() == 1
+                && !vulkanOutput->frameHasOwnRenderer3dSnapshot(renderFrame, true))
             {
                 if (vulkanFaithfulStashPreRun.size() != 256u * 192u)
                     vulkanFaithfulStashPreRun.assign(256u * 192u, 0u);
@@ -3611,7 +3787,8 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado)
         ndsRunStartNs = preSubidaFinNs;
     }
     VulkanRenderer3D* deferredRenderer = nullptr;
-    if (prioritizeCurrentPresentation && !frameQueuePolicy.AllowDropForDeadline
+    if ((prioritizeCurrentPresentation || snapshotDependencyRenderer != nullptr)
+        && !frameQueuePolicy.AllowDropForDeadline
         && vulkanOutput != nullptr && sFielSnapPreHecho
         && vulkanOutput->frameHasOwnRenderer3dSnapshot(renderFrame))
     {
@@ -3624,7 +3801,8 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado)
             (void)deferredRenderer->SetFrameSubmissionDeferred(false);
     });
     processExactLiveGuideBeforeRunFrame();
-    u32 nLines = nds->RunFrame();
+    nds->TraceWMFrameBoundary(MelonDSAndroid::internalFilesDir);
+    u32 nLines = nds->RunFrame(wmFrameDeadline);
     if (lowLatencyEnabled && currentRenderer == Renderer::Vulkan)
     {
         if (auto* renderer2D = dynamic_cast<GPU2D::SoftRenderer*>(&nds->GPU.GetRenderer2D()))
@@ -3736,12 +3914,24 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado)
         shouldCaptureRewindState = frameTail.shouldCaptureRewindState;
     }
 
+    if (snapshotDependencyRenderer != nullptr)
+    {
+        auto* renderer3D = snapshotDependencyRenderer;
+        snapshotDependencyRenderer = nullptr;
+        if (!renderer3D->SetSubmissionDependency(nullptr))
+        {
+            handleVulkanRuntimeFailure("snapshot submission dependency");
+            return 0;
+        }
+    }
+
     if (deferredRenderer != nullptr)
     {
         VkSemaphore presentationDependency = VK_NULL_HANDLE;
         u64 presentationValue = 0;
         std::unique_lock<std::mutex> dependencyLock;
-        if (!fastForwardActive && !frameQueuePolicy.AllowDropForDeadline
+        if (prioritizeCurrentPresentation && !fastForwardActive
+            && !frameQueuePolicy.AllowDropForDeadline
             && hasValidFrame && lastCompletedVulkanFrame == renderFrame
             && deferredRenderer->HasDeferredFrameSubmission())
         {
@@ -4560,6 +4750,7 @@ VulkanPresentationResult MelonInstance::presentVulkanFrame(
                         frameQueue.capturePublicationGeneration()))
                 {
                     vulkanPresentacionesTotal.fetch_add(1, std::memory_order_relaxed);
+                    recordProductTiming(vulkanPresenterUltimoProductoId, 0);
                     const u32 rachaTop = vulkanPresenterRachaCopiasTop.fetch_add(1, std::memory_order_relaxed) + 1u;
                     const u32 rachaBottom = vulkanPresenterRachaCopiasBottom.fetch_add(1, std::memory_order_relaxed) + 1u;
                     const u32 racha = std::max(rachaTop, rachaBottom);
@@ -4731,6 +4922,7 @@ VulkanPresentationResult MelonInstance::presentVulkanFrame(
             if (result == VulkanPresentationResult::Presented)
             {
                 vulkanPresentacionesTotal.fetch_add(1, std::memory_order_relaxed);
+                recordProductTiming(frame->frameId, frame->frameId != vulkanPresenterUltimoProductoId ? 2 : 1);
                 if (frame->frameId != vulkanPresenterUltimoProductoId)
                 {
 
@@ -4815,7 +5007,18 @@ bool MelonInstance::waitForVulkanPresentationConsumptionConcurrent(
     {
 
         std::unique_lock<std::mutex> operationLock(
-            vulkanPresentationOperationMutex);
+            vulkanPresentationOperationMutex, std::defer_lock);
+        while (!operationLock.try_lock())
+        {
+            if (nds == nullptr || !nds->CanPollWMHost())
+                break;
+            nds->PollWMHost();
+            if (nds == nullptr || !nds->CanPollWMHost())
+                break;
+            Platform::Sleep(200);
+        }
+        if (!operationLock.owns_lock())
+            operationLock.lock();
         if (currentRenderer != Renderer::Vulkan || !vulkanSurfacePresenter)
             return true;
 
@@ -4832,7 +5035,10 @@ bool MelonInstance::waitForVulkanPresentationConsumptionConcurrent(
     {
         ATrace_beginSection("VulkanPump.WaitRecyclePresentToken");
         traceOpen = true;
-        waitSucceeded = presenter->waitForFrameConsumption(frame);
+        void (*hostService)(void*) = nullptr;
+        if (nds != nullptr && nds->CanPollWMHost())
+            hostService = [](void* context) { static_cast<NDS*>(context)->PollWMHost(); };
+        waitSucceeded = presenter->waitForFrameConsumption(frame, UINT64_MAX, hostService, nds);
         ATrace_endSection();
         traceOpen = false;
         if (vulkanQ4MeasureEnabled)
@@ -6998,7 +7204,7 @@ void MelonInstance::updateConfiguration(std::shared_ptr<EmulatorConfiguration> n
         nds->SPU.SetDegrade10Bit(static_cast<AudioBitDepth>(newConfiguration->audioSettings.audioBitrate));
     }
 
-    rewindManager.UpdateRewindSettings(newConfiguration->rewindEnabled, newConfiguration->rewindLengthSeconds, newConfiguration->rewindCaptureSpacingSeconds);
+    rewindManager.UpdateRewindSettings(newConfiguration->rewindEnabled && !Multiplayer::Active(), newConfiguration->rewindLengthSeconds, newConfiguration->rewindCaptureSpacingSeconds);
 
     const bool rtcOffsetChanged = currentConfiguration->rtcOffsetMinutes != newConfiguration->rtcOffsetMinutes;
     currentConfiguration = newConfiguration;
@@ -7021,12 +7227,21 @@ void MelonInstance::requestGbaSaveWrite(const u8* saveData, u32 saveLength, u32 
 
 void MelonInstance::requestFirmwareSaveWrite(const u8* saveData, u32 saveLength, u32 writeOffset, u32 writeLength)
 {
-    if (firmwareSave)
+    if (!firmwareSave) return;
+    if (multiplayerFirmwareIdentity && nds->GetFirmware().GetHeader().Identifier != GENERATED_FIRMWARE_IDENTIFIER)
+    {
+        Firmware restored(saveData, saveLength);
+        restored.GetHeader().MacAddr = originalMultiplayerMac;
+        restored.GetHeader().UpdateChecksum();
+        firmwareSave->RequestFlush(restored.Buffer(), restored.Length(), writeOffset, writeLength);
+    }
+    else
         firmwareSave->RequestFlush(saveData, saveLength, writeOffset, writeLength);
 }
 
 bool MelonInstance::areSaveStatesAllowed()
 {
+    if (Multiplayer::Active()) return false;
     std::lock_guard lock(retroAchievementsManagerLifetimeMutex);
     if (!retroAchievementsManager)
         return true;
@@ -7036,6 +7251,7 @@ bool MelonInstance::areSaveStatesAllowed()
 
 bool MelonInstance::saveState(Savestate* state, bool refreshScreenshot)
 {
+    if (Multiplayer::Active()) return false;
     const bool serializingVulkan = currentRenderer == Renderer::Vulkan;
     if (serializingVulkan)
         joinPendingFrameTail();
@@ -7067,6 +7283,7 @@ bool MelonInstance::saveState(Savestate* state, bool refreshScreenshot)
 
 bool MelonInstance::loadState(Savestate* state)
 {
+    if (Multiplayer::Active()) return false;
     inhibirFrameskipVulkan();
     vulkanFrameskipSaltosConsecutivos = 0;
     vulkanFrameskipSaltosPorPantalla[0] = vulkanFrameskipSaltosPorPantalla[1] = 0u;
@@ -7392,7 +7609,8 @@ void MelonInstance::updateRenderer()
                 break;
             case Renderer::Vulkan:
             {
-                auto vulkanRenderer = VulkanRenderer3D::New();
+                auto vulkanRenderer = VulkanRenderer3D::New(
+                    setPerformanceHintWorkerActive, setEmulationThreadCreationActive);
                 auto vulkanRenderSettings = static_cast<VulkanRenderSettings&>(*currentConfiguration->renderSettings);
 
                 if (vulkanRenderer)

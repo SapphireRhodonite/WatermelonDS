@@ -6,6 +6,8 @@
 #include "LeaderboardAttemptCorrelation.h"
 #include "LeaderboardScoreboardResponse.h"
 #include "MelonDS.h"
+#include "EmulationThreadCpuPolicy.h"
+#include "ThreadLifecycleScope.h"
 #include "Platform.h"
 #include "rc_consoles.h"
 #include "types.h"
@@ -203,6 +205,7 @@ public:
             terminalTicketsStored = true;
         }
 
+        ThreadLifecycleScope creation(setEmulationThreadCreationActive);
         std::thread([cancellations = std::move(cancellations)]() {
             for (const auto& cancellation : cancellations)
             {
@@ -1053,6 +1056,7 @@ private:
         if (workersStarted)
             return;
         workersStarted = true;
+        ThreadLifecycleScope creation(setEmulationThreadCreationActive);
         for (int index = 0; index < RC_CLIENT_HTTP_WORKER_COUNT; ++index)
             std::thread([this] { WorkerLoop(); }).detach();
         std::thread([this] { WatchdogLoop(); }).detach();

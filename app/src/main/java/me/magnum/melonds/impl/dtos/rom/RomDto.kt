@@ -2,6 +2,7 @@ package me.magnum.melonds.impl.dtos.rom
 
 import androidx.core.net.toUri
 import com.google.gson.annotations.SerializedName
+import me.magnum.melonds.domain.model.CartridgeId
 import me.magnum.melonds.domain.model.rom.Rom
 import java.util.Date
 import kotlin.time.Duration.Companion.milliseconds
@@ -31,6 +32,12 @@ data class RomDto(
     val isFavorite: Boolean = false,
     @SerializedName("unsupportedReason")
     val unsupportedReason: String? = null,
+    @SerializedName("metadataPending")
+    val metadataPending: Boolean = false,
+    @SerializedName("metadataUserChanges")
+    val metadataUserChanges: Int = 0,
+    @SerializedName("cartridge")
+    val cartridge: CartridgeId? = null,
 ) {
 
     companion object {
@@ -48,6 +55,9 @@ data class RomDto(
                 rom.totalPlayTime.inWholeMilliseconds,
                 rom.isFavorite,
                 unsupportedReason = rom.unsupportedReason,
+                metadataPending = rom.metadataPending,
+                metadataUserChanges = rom.metadataUserChanges,
+                cartridge = rom.cartridge,
             )
         }
     }
@@ -66,6 +76,9 @@ data class RomDto(
             totalPlayTime.milliseconds,
             isFavorite,
             unsupportedReason = unsupportedReason,
+            metadataPending = metadataPending,
+            metadataUserChanges = metadataUserChanges,
+            cartridge = cartridge,
         )
     }
 }

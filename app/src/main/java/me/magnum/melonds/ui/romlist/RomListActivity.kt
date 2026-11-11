@@ -225,6 +225,10 @@ class RomListActivity : AppCompatActivity() {
                     viewModel.cycleFilter(forward = true)
                     return true
                 }
+                KeyEvent.KEYCODE_BUTTON_SELECT -> {
+                    if (event.repeatCount == 0) openMultiplayer()
+                    return true
+                }
             }
         }
         return super.dispatchKeyEvent(event)
@@ -336,6 +340,10 @@ class RomListActivity : AppCompatActivity() {
                 launchFirmware(ConsoleType.DSi)
                 return true
             }
+            R.id.action_multiplayer -> {
+                startActivity(Intent(this, me.magnum.melonds.multiplayer.MultiplayerActivity::class.java))
+                return true
+            }
             R.id.action_dsiware_manager -> {
                 val intent = Intent(this, DSiWareManagerActivity::class.java)
                 startActivity(intent)
@@ -356,6 +364,11 @@ class RomListActivity : AppCompatActivity() {
 
     internal fun bootFirmware(consoleType: ConsoleType) {
         launchFirmware(consoleType)
+    }
+
+    internal fun openMultiplayer(join: String? = null) {
+        startActivity(Intent(this, me.magnum.melonds.multiplayer.MultiplayerActivity::class.java)
+            .putExtra(me.magnum.melonds.multiplayer.MultiplayerActivity.EXTRA_JOIN, join))
     }
 
     internal fun openDsiWareManager() {

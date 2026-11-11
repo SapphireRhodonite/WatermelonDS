@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="multiplayer_title">Multiplayer</string>
+    <string name="multiplayer_back">Back</string>
+    <string name="multiplayer_direct_failed">Could not create the direct room. Check Wi-Fi and close any other Wi-Fi Direct group. This device must support a 5 GHz group.</string>
+    <string name="multiplayer_direct_stop_failed">Could not confirm that the direct network closed. Check Android Wi-Fi settings.</string>
+    <string name="multiplayer_finish_game">Exit the game before changing the multiplayer connection.</string>
+    <string name="multiplayer_connection_failed">Could not connect. Check that Wi-Fi is on and the Direct room is still open.</string>
+    <string name="multiplayer_operation_unavailable">Savestates and fast-forward are unavailable during local multiplayer.</string>
+    <string name="multiplayer_interrupted_message">The multiplayer connection was closed after the game stayed paused for 3 seconds. Exit the game and rejoin the room to play again.</string>
+
+    <string name="mp_create_title">Create room</string>
+    <string name="mp_code_title">Code</string>
+    <string name="mp_nearby">Nearby rooms</string>
+    <string name="mp_searching">Searching…</string>
+    <string name="mp_nearby_empty">No rooms nearby yet. Ask the host for the room code, or create your own room.</string>
+    <string name="mp_room_of">%1$s\'s room</string>
+    <string name="mp_invite_title">%1$s opened a room nearby</string>
+    <string name="mp_join">Join</string>
+    <string name="mp_hint_create">Create</string>
+    <string name="mp_hint_library">Library</string>
+    <string name="mp_profile_cd">Your DS profile: %1$s</string>
+
+    <string name="mp_play_rom">Everyone with the game</string>
+    <string name="mp_play_download">DS Download Play</string>
+    <string name="mp_play_chat">PictoChat</string>
+    <string name="mp_play_rom_desc">Each console opens its own copy of the same game.</string>
+    <string name="mp_play_download_desc">Only you have the game. The others receive it.</string>
+    <string name="mp_play_chat_desc">Chat and draw. Nobody needs a game.</string>
+    <string name="mp_how_play">How will you play?</string>
+    <string name="mp_pick_game">Choose the game</string>
+    <string name="mp_no_games">Your library has no DS games yet.</string>
+    <string name="mp_filter_recent">RECENT</string>
+    <string name="mp_filter_all">ALL</string>
+    <string name="mp_net_direct">Direct room</string>
+    <string name="mp_hint_choose">Choose</string>
+    <string name="mp_next">Next</string>
+    <string name="mp_direct_permission">Android needs the nearby devices permission to open a direct room.</string>
+    <string name="mp_open_room">Open room</string>
+    <string name="mp_save_game">Save</string>
+
+    <string name="mp_tag_direct">DIRECT</string>
+    <string name="mp_tag_wifi">WI‑FI</string>
+    <string name="mp_tag_host">HOST</string>
+    <string name="mp_tag_connecting">CONNECTING</string>
+    <string name="mp_tag_left">DISCONNECTED</string>
+    <string name="mp_tag_you">YOU</string>
+    <string name="mp_tag_ping">%1$d MS</string>
+    <string name="mp_tag_in_game">IN GAME</string>
+    <string name="mp_free">Free</string>
+    <string name="mp_tag_waiting">WAITING</string>
+    <string name="mp_code_label">CODE</string>
+    <string name="mp_code_for">to join</string>
+    <string name="mp_game_change">%1$s · Change</string>
+    <string name="mp_game_pick">Choose a game</string>
+    <string name="mp_start">Start · %1$d</string>
+    <string name="mp_waiting">Waiting…</string>
+    <string name="mp_hint_game">Game</string>
+    <string name="mp_hint_close">Close</string>
+    <string name="mp_hint_details">Details</string>
+    <string name="mp_joined">%1$s joined</string>
+    <string name="mp_left">%1$s disconnected</string>
+    <string name="mp_details">Room details</string>
+    <string name="mp_details_body">If a console can\'t join by itself, connect it to this network in Android Wi‑Fi and join by IP.</string>
+    <string name="mp_close_title">Close the room?</string>
+    <string name="mp_close_body">Everyone in the room will be disconnected.</string>
+    <string name="mp_close_room">Close room</string>
+    <string name="mp_keep_open">Keep it open</string>
+    <string name="mp_stay">Stay</string>
+    <string name="mp_leave_title">Leave the room?</string>
+    <string name="mp_leave_body">You can join again with the code while the room is open.</string>
+    <string name="mp_leave">Leave</string>
+    <string name="mp_duplicate">There\'s another «%1$s». Change your DS name so nobody gets mixed up.</string>
+    <string name="mp_have_game">You have it · opens when %1$s starts</string>
+    <string name="mp_open_now">Open now</string>
+    <string name="mp_missing_game">This game isn\'t in your library.</string>
+    <string name="mp_download_guest">You\'ll receive it with DS Download Play</string>
+    <string name="mp_chat_guest">Opens PictoChat from the DS menu</string>
+    <string name="mp_waiting_host">Waiting for %1$s to choose the game</string>
+    <string name="mp_pause_warning">Pausing for more than 3 s ends the connection</string>
+    <string name="mp_host_closed">The host closed the room.</string>
+    <string name="mp_hint_open">Open game</string>
+    <string name="mp_hint_leave">Leave</string>
+    <string name="mp_bios_needed">Needs DS BIOS and firmware · Set up</string>
+
+    <string name="mp_join_title">Join a room</string>
+    <string name="mp_tab_code">CODE</string>
+    <string name="mp_tab_ip">IP</string>
+    <string name="mp_code_hint">Type the code shown in the host\'s room.</string>
+    <string name="mp_code_missing">No nearby room has that code.</string>
+    <string name="mp_enter">Enter</string>
+    <string name="mp_ip_hint">Use it if the room doesn\'t show up by itself. The host sees its IP in «Room details».</string>
+    <string name="mp_ip_label">Host IP</string>
+    <string name="mp_hint_type">Type</string>
+    <string name="mp_hint_erase">Erase</string>
+
+    <string name="mp_entering">Entering %1$s</string>
+    <string name="mp_you">You</string>
+    <string name="mp_found">Room found</string>
+    <string name="mp_joining_network">Joining %1$s\'s network</string>
+    <string name="mp_joining_network_sub">No passwords. Your usual Wi‑Fi stays connected.</string>
+    <string name="mp_entering_room">Entering the room</string>
+    <string name="mp_cancel">Cancel</string>
+
+    <string name="mp_fail_title">Couldn\'t join on our own</string>
+    <string name="mp_fail_closer">Move closer to %1$s\'s console.</string>
+    <string name="mp_fail_wifi">Check that Wi‑Fi is on.</string>
+    <string name="mp_fail_plan_b">Some consoles can\'t join by themselves. Use plan B.</string>
+    <string name="mp_retry">Retry</string>
+    <string name="mp_plan_b">PLAN B · JOIN MANUALLY</string>
+    <string name="mp_plan_b_body">In Android Wi‑Fi choose this network and type the password, then come back:</string>
+    <string name="mp_network">Network</string>
+    <string name="mp_password">Password</string>
+    <string name="mp_open_wifi">Open Android Wi‑Fi</string>
+    <string name="mp_join_ip">I\'m connected · Join</string>
+
+    <string name="mp_perm_title">Play with consoles nearby</string>
+    <string name="mp_perm_body">Android will ask for «%1$s». WatermelonDS uses it only for rooms.</string>
+    <string name="mp_continue">Continue</string>
+    <string name="mp_not_now">Not now</string>
+    <string name="mp_perm_without">Nearby devices permission is required to join or create a Direct room.</string>
+
+    <string name="mp_profile_title">DS profile</string>
+    <string name="mp_profile_sub">Rooms and games see it</string>
+    <string name="mp_message">Message</string>
+    <string name="mp_birthday">Birthday</string>
+    <string name="mp_colour">Favourite colour</string>
+    <string name="mp_symbol">Symbol</string>
+    <string name="mp_save">Save</string>
+    <string name="mp_profile_firmware_note">The DS menu and PictoChat use the name saved in your own DS firmware.</string>
+    <string name="mp_profile_room_note">A new name is used the next time you join a room.</string>
+    <string name="mp_hint_colour">Colour</string>
+    <string-array name="mp_colour_names">
+        <item>Grey</item>
+        <item>Brown</item>
+        <item>Red</item>
+        <item>Pink</item>
+        <item>Orange</item>
+        <item>Yellow</item>
+        <item>Lime</item>
+        <item>Green</item>
+        <item>Dark green</item>
+        <item>Turquoise</item>
+        <item>Light blue</item>
+        <item>Blue</item>
+        <item>Dark blue</item>
+        <item>Purple</item>
+        <item>Violet</item>
+        <item>Fuchsia</item>
+    </string-array>
+    <string-array name="mp_symbol_names">
+        <item>Initial</item>
+        <item>Star</item>
+        <item>Heart</item>
+        <item>Note</item>
+        <item>Bolt</item>
+        <item>Moon</item>
+        <item>Crown</item>
+        <item>Smile</item>
+        <item>Flower</item>
+        <item>Leaf</item>
+        <item>Diamond</item>
+        <item>Controller</item>
+    </string-array>
+    <string-array name="mp_months">
+        <item>January</item>
+        <item>February</item>
+        <item>March</item>
+        <item>April</item>
+        <item>May</item>
+        <item>June</item>
+        <item>July</item>
+        <item>August</item>
+        <item>September</item>
+        <item>October</item>
+        <item>November</item>
+        <item>December</item>
+    </string-array>
+    <string name="mp_back_room">Back to the room</string>
+    <string name="mp_birthday_value">%1$d %2$s</string>
+    <string name="mp_change_name">Change name</string>
+    <string name="mp_each_needs">WHAT EACH CONSOLE NEEDS</string>
+    <string name="mp_enter_code">Enter code</string>
+    <string name="mp_filter_favorites">★ FAVORITES</string>
+    <string name="mp_first_time">FIRST TIME</string>
+    <string name="mp_hint_choose_next">Choose · again: next</string>
+    <string name="mp_hint_code_ip">Code / IP</string>
+    <string name="mp_hint_edit">Edit</string>
+    <string name="mp_hint_letter">Letter</string>
+    <string name="mp_host_ip">Host IP</string>
+    <string name="mp_max">%1$d MAX</string>
+    <string name="mp_meta_chat">Up to 16 players · DS menu</string>
+    <string name="mp_meta_chat_locked">Needs your DS BIOS and firmware · Set up</string>
+    <string name="mp_meta_download">Up to 8 players · Guests need DS BIOS</string>
+    <string name="mp_meta_rom">Up to 8 players · No BIOS needed</string>
+    <string name="mp_name">Name</string>
+    <string name="mp_need_menu">DS MENU</string>
+    <string name="mp_need_receives">RECEIVES</string>
+    <string name="mp_net_wifi">Wi‑Fi room</string>
+    <string name="mp_notice">HEADS UP</string>
+    <string name="mp_notice_name">SAME NAME</string>
+    <string name="mp_perm_direct">Open a direct room, no passwords</string>
+    <string name="mp_perm_direct_sub">Your Wi‑Fi stays connected</string>
+    <string name="mp_perm_find">Find rooms around you</string>
+    <string name="mp_perm_find_sub">Only while you\'re in Multiplayer</string>
+    <string name="mp_perm_location">Location</string>
+    <string name="mp_perm_nearby">Nearby devices</string>
+    <string name="mp_perm_private">No internet needed</string>
+    <string name="mp_perm_private_sub">Your location is never read</string>
+    <string name="mp_perm_radar">YOU · CONSOLES NEARBY</string>
+    <string name="mp_plan_step_back">Come back · Join by IP %1$s</string>
+    <string name="mp_plan_step_pick">Pick %1$s, type the password</string>
+    <string name="mp_plan_step_wifi">Open Android Wi‑Fi (Y)</string>
+    <string name="mp_players_of">%1$d/%2$d PLAYERS</string>
+    <string name="mp_search_empty">No games match your search.</string>
+    <string name="mp_search_games">Search %1$d games</string>
+    <string name="mp_step_mode">MODE</string>
+    <string name="mp_step_of">STEP %1$d/%2$d</string>
+    <string name="mp_tag_download">DOWNLOAD</string>
+    <string name="mp_tag_not_connected">NOT CONNECTED</string>
+    <string name="mp_wifi_short">Android Wi‑Fi</string>
+    <plurals name="mp_count_favorites">
+        <item quantity="one">%d favorite</item>
+        <item quantity="other">%d favorites</item>
+    </plurals>
+    <plurals name="mp_count_found">
+        <item quantity="one">%d found</item>
+        <item quantity="other">%d found</item>
+    </plurals>
+    <plurals name="mp_count_games">
+        <item quantity="one">%d game</item>
+        <item quantity="other">%d games</item>
+    </plurals>
+    <plurals name="mp_count_recent">
+        <item quantity="one">%d recent</item>
+        <item quantity="other">%d recent</item>
+    </plurals>
+    <plurals name="mp_rooms">
+        <item quantity="one">%d room</item>
+        <item quantity="other">%d rooms</item>
+    </plurals>
+    <string name="mp_hint_symbol">Symbol</string>
+    <string name="mp_hint_profile">Profile</string>
+    <string name="mp_filter_library">Library</string>
+    <string name="mp_show_all">Show all</string>
+    <string name="mp_reading_headers">Reading cartridge headers…</string>
+    <string name="mp_no_games_for_mode">No matching games. Choose Show all to browse your library.</string>
+    <string name="mp_wfc_mode_unconfirmed">WFC · local mode unconfirmed</string>
+    <string name="mp_mode_unconfirmed">Mode unconfirmed</string>
+    <string name="mp_selection_changed">The selected cartridge changed. Choose a game from the list.</string>
+</resources>
