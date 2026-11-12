@@ -17,7 +17,7 @@ public:
             createSession(threadIds.front(), targetDurationNs);
     }
 
-    virtual bool hasSession() const { return true; }
+    virtual bool hasSession() const = 0;
     virtual bool supportsThreadGroups() const { return false; }
     virtual void destroySession() = 0;
     virtual void reportActualWorkDuration(int64_t actualDurationNs) = 0;

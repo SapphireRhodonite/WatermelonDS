@@ -1,5 +1,6 @@
 #include "MultiplayerSession.h"
 #include "EmulationThreadCpuPolicy.h"
+#include "ThreadLifecycleScope.h"
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
 #include <GLES3/gl3.h>
@@ -1927,11 +1928,7 @@ Java_me_magnum_melonds_MelonEmulator_presentVulkanFrameNative(
     jlong expectedWaitEpoch)
 {
 
-    static thread_local bool hintsRegistrados = false;
-    if (!hintsRegistrados) {
-        hintsRegistrados = true;
-        registrarHiloEnHints();
-    }
+    static thread_local melonDS::ThreadLifecycleScope hints(MelonDSAndroid::setPerformanceHintWorkerActive);
     const auto toDeadlineTime = [](jlong value) -> std::optional<std::chrono::time_point<std::chrono::steady_clock>> {
         if (value <= 0)
             return std::nullopt;

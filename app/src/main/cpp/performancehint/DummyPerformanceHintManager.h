@@ -6,6 +6,7 @@
 class DummyPerformanceHintManager : public PerformanceHintManager
 {
 public:
+    bool hasSession() const override { return false; }
     void createSession(pid_t threadId, int64_t targetDurationNs) override { }
     void destroySession() override { }
     void reportActualWorkDuration(int64_t actualDurationNs) override { }

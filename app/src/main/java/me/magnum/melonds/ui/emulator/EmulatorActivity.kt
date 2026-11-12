@@ -20,8 +20,10 @@ import android.view.Display
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.InputDevice
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.view.Window
 import android.view.WindowManager
 import android.widget.EditText
@@ -196,6 +198,10 @@ open class EmulatorActivity : AppCompatActivity() {
     }
 
     private lateinit var binding: ActivityEmulatorBinding
+    private var joystickDispatchView: View? = null
+    private val joystickFocusListener = ViewTreeObserver.OnGlobalFocusChangeListener { _, _ ->
+        updateJoystickDispatch()
+    }
     private val viewModel: EmulatorViewModel by viewModels(
         extrasProducer = {
             val extras = MutableCreationExtras(defaultViewModelCreationExtras)
@@ -517,10 +523,12 @@ open class EmulatorActivity : AppCompatActivity() {
         onOverlaysCleared = {
             disableScreenTimeOut()
             presentation?.setPauseOverlayVisibility(false)
+            updateJoystickDispatch()
         },
         onOverlaysPresent = {
             enableScreenTimeOut()
             presentation?.setPauseOverlayVisibility(true)
+            updateJoystickDispatch()
         }
     )
 
@@ -1205,6 +1213,7 @@ open class EmulatorActivity : AppCompatActivity() {
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.CREATED) {
                 viewModel.emulatorState.collectLatest {
+                    updateJoystickDispatch()
                     if (!it.isRunning()) releaseVirtualButtonInputs()
                     when (it) {
                         is EmulatorState.Uninitialized -> {
@@ -1724,6 +1733,10 @@ open class EmulatorActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.decorView.viewTreeObserver.addOnGlobalFocusChangeListener(joystickFocusListener)
+            updateJoystickDispatch(resumed = true)
+        }
         if (PhantomPlayer.current != null) {
             phantomPlayerResumed = true
             updateDisplays()
@@ -1743,8 +1756,20 @@ open class EmulatorActivity : AppCompatActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        updateJoystickDispatch()
         if (!hasFocus) releaseVirtualButtonInputs()
         setupFullscreen()
+    }
+
+    private fun updateJoystickDispatch(resumed: Boolean = lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+        val target = if (resumed && hasWindowFocus() && MelonEmulator.isLowLatencyEnabled &&
+            viewModel.emulatorState.value.isRunning() && !activeOverlays.hasActiveOverlays()
+        ) currentFocus ?: window.decorView else null
+        if (joystickDispatchView === target) return
+        joystickDispatchView?.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_NONE)
+        target?.requestUnbufferedDispatch(InputDevice.SOURCE_CLASS_JOYSTICK)
+        joystickDispatchView = target
     }
 
     private fun setupFullscreen() {
@@ -4082,6 +4107,10 @@ open class EmulatorActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.decorView.viewTreeObserver.removeOnGlobalFocusChangeListener(joystickFocusListener)
+            updateJoystickDispatch(resumed = false)
+        }
         releaseVirtualButtonInputs()
         if (PhantomPlayer.current != null) {
             phantomPlayerResumed = false

@@ -9,6 +9,7 @@ class JniPerformanceHintManager : public PerformanceHintManager
 {
 public:
     explicit JniPerformanceHintManager(JniEnvHandler* jniEnvHandler);
+    bool hasSession() const override { return hintSession != nullptr; }
     void createSession(pid_t threadId, int64_t targetDurationNs) override;
     void destroySession() override;
     void reportActualWorkDuration(int64_t actualDurationNs) override;
