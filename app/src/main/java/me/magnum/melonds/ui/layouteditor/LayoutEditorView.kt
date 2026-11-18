@@ -118,7 +118,7 @@ class LayoutEditorView(context: Context, attrs: AttributeSet?) : LayoutView(cont
 
     fun buildCurrentLayout(): List<PositionedLayoutComponent> {
         return views.values.map {
-            PositionedLayoutComponent(it.getRect(), it.component, it.baseAlpha, it.onTop, it.buttonMode)
+            PositionedLayoutComponent(it.getRect(), it.component, it.baseAlpha, it.onTop, it.buttonMode, it.screenAspectRatio)
         }
     }
 

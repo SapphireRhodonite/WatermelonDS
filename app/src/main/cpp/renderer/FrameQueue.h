@@ -153,7 +153,8 @@ public:
     void commitPresentedFrame(Frame* frame, const FrameQueuePolicy& policy);
     void deferPresentedFrame(Frame* frame, const FrameQueuePolicy& policy);
     void validateRenderFrame(Frame* frame, int requiredWidth, int requiredHeight, FrameBackend backend);
-    bool pushRenderedFrame(Frame* frame, const FrameQueuePolicy& policy);
+    bool pushRenderedFrame(Frame* frame, const FrameQueuePolicy& policy,
+        bool (*hostService)(void*) = nullptr, void* hostContext = nullptr);
     void discardRenderedFrame(Frame* frame);
     void cancelPendingPublications();
     void suspendPublications();

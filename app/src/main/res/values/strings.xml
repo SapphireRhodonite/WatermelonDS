@@ -436,6 +436,8 @@
     <string name="audio_mute_on_fast_forward_summary">No sound while fast forward is active</string>
     <string name="audio_latency">Audio latency</string>
     <string name="microphone_source">Microphone source</string>
+    <string name="device_microphone_gain">Device microphone gain</string>
+    <string name="device_microphone_gain_summary">1× keeps the original level. Increase for quiet microphones.</string>
     <string name="controller_layout">Layouts</string>
     <string name="category_save_files">Save Files</string>
     <string name="category_save_files_summary">Save file &amp; save state locations</string>

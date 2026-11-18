@@ -370,6 +370,7 @@ class SharedPreferencesSettingsRepository(
             lowLatencyEnabled = preferences.getBoolean("video_low_latency", false),
             rtcOffsetMinutes = preferences.getInt("rtc_offset_minutes", 0).coerceIn(-1440, 1440),
             wfcSettingsPath = preferences.getString("wfc_settings_file", null),
+            micGain = preferences.getInt("mic_gain", 1).coerceIn(1, 10),
         )
     }
 

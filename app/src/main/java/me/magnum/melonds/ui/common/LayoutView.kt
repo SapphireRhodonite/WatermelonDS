@@ -72,6 +72,7 @@ open class LayoutView(context: Context, attrs: AttributeSet?) : FrameLayout(cont
             setHighlighted(false)
             onTop = layoutComponent.onTop
             buttonMode = layoutComponent.buttonMode
+            screenAspectRatio = layoutComponent.screenAspectRatio
         }
 
         if (layoutComponent.isScreen()) {

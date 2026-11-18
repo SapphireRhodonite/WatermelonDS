@@ -3,7 +3,6 @@ package me.magnum.melonds.common.workers
 import android.content.Context
 import android.content.pm.ServiceInfo
 import android.content.res.AssetFileDescriptor
-import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
@@ -16,18 +15,11 @@ import androidx.work.WorkerParameters
 import androidx.work.workDataOf
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import me.magnum.melonds.MelonDSApplication
 import me.magnum.melonds.R
-import me.magnum.melonds.common.cheats.CheatDatabaseParser
-import me.magnum.melonds.common.cheats.CheatDatabaseParserListener
 import me.magnum.melonds.common.cheats.ProgressTrackerInputStream
-import me.magnum.melonds.common.cheats.XmlCheatDatabaseParser
-import me.magnum.melonds.domain.model.CheatDatabase
-import me.magnum.melonds.domain.model.Game
 import me.magnum.melonds.domain.repositories.CheatsRepository
-import kotlin.coroutines.resume
-import kotlin.coroutines.suspendCoroutine
 
 @HiltWorker
 class CheatImportWorker @AssistedInject constructor(
@@ -64,32 +56,16 @@ class CheatImportWorker @AssistedInject constructor(
                 }
             }
 
-            val databaseExtension = databaseDocument.name?.substringAfterLast('.')
-            val parser = when (databaseExtension) {
-                "xml" -> XmlCheatDatabaseParser()
-                else -> {
-                    return Result.failure()
-                }
+            if (!databaseDocument.name?.substringAfterLast('.').equals("xml", ignoreCase = true)) {
+                return Result.failure()
             }
 
-            return parseXmlDocument(uri, parser, totalFileSize)
-        } catch (e: Exception) {
-            return Result.failure()
-        }
-    }
-
-    private suspend fun parseXmlDocument(uri: Uri, parser: CheatDatabaseParser, totalFileSize: Long?) = suspendCoroutine { continuation ->
-        applicationContext.contentResolver.openInputStream(uri)?.use {
-            val progressTrackerStream = ProgressTrackerInputStream(it)
-            parser.parseCheatDatabase(progressTrackerStream, object : CheatDatabaseParserListener {
-                override fun onDatabaseParseStart(databaseName: String): CheatDatabase = runBlocking {
-                    cheatsRepository.deleteCheatDatabaseIfExists(databaseName)
-                    cheatsRepository.addCheatDatabase(databaseName)
-                }
-
-                override fun onGameParseStart(gameName: String) {
-                    val readProgress = if (totalFileSize != null) {
-                        (progressTrackerStream.totalReadBytes.toDouble() / totalFileSize * 100).toInt()
+            val input = applicationContext.contentResolver.openInputStream(uri) ?: return Result.failure()
+            input.use {
+                val stream = ProgressTrackerInputStream(it)
+                cheatsRepository.replaceImportedCheats(stream) { gameName ->
+                    val readProgress = if (totalFileSize != null && totalFileSize > 0) {
+                        (stream.totalReadBytes.toDouble() / totalFileSize * 100).toInt()
                     } else {
                         0
                     }
@@ -100,15 +76,12 @@ class CheatImportWorker @AssistedInject constructor(
                         KEY_PROGRESS_ITEM to gameName
                     ))
                 }
-
-                override fun onGameParsed(game: Game): Unit = runBlocking {
-                    cheatsRepository.addGameCheats(game)
-                }
-
-                override fun onParseComplete() {
-                    continuation.resume(Result.success())
-                }
-            })
+            }
+            return Result.success()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return Result.failure()
         }
     }
 

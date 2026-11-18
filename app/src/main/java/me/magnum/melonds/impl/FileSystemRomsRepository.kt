@@ -2,6 +2,7 @@ package me.magnum.melonds.impl
 
 import android.content.Context
 import android.net.Uri
+import me.magnum.melonds.extensions.findChildUri
 import me.magnum.melonds.domain.model.CartridgeId
 import android.os.Handler
 import android.os.Looper
@@ -198,11 +199,25 @@ class FileSystemRomsRepository(
         return directoryScanStatusFlow.asStateFlow()
     }
 
-    override suspend fun getRomAtPath(path: String): Rom? {
-        return getRoms().first().find { rom ->
-            val romPath = FileUtils.getAbsolutePathFromSAFUri(context, rom.uri)
-            romPath == path
-        }?.let { prepareRomForUse(it) }
+    override suspend fun getRomAtPath(path: String): Rom? = withContext(Dispatchers.IO) {
+        val file = File(path)
+        if (!file.isAbsolute) return@withContext null
+        val canonicalFile = try {
+            file.canonicalFile
+        } catch (_: java.io.IOException) {
+            file
+        }
+        val documentId = FileUtils.getExternalStorageDocumentId(context, canonicalFile)
+        val allRoms = getRoms().first()
+        val indexed = documentId?.let { id ->
+            allRoms.find { it.uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY && it.uri.lastPathSegment == id }
+        }
+        val match = indexed ?: allRoms.find { rom ->
+            if (rom.uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY &&
+                rom.fileName.isNotEmpty() && rom.fileName != file.name) return@find false
+            FileUtils.getAbsolutePathFromSAFUri(context, rom.uri) == path
+        }
+        match?.let { prepareRomForUse(it) }
     }
 
     override suspend fun getRomAtUri(uri: Uri): Rom? {
@@ -583,10 +598,12 @@ class FileSystemRomsRepository(
     }
 
     private fun readRomOptionsConfig(rom: Rom): RomConfig? {
-        val optionsDocument = getRomOptionsDocument(rom) ?: return null
+        val rootDocument = getRomOptionsRootDocument(rom) ?: return null
+        val name = getRomOptionsFileName(rom)
+        val optionsUri = rootDocument.findChildUri(context.contentResolver, name, "$name.bin") ?: return null
         return runCatching {
-            val reader = context.contentResolver.openInputStream(optionsDocument.uri)?.bufferedReader()
-                ?: throw IllegalStateException("Could not open ${optionsDocument.uri}")
+            val reader = context.contentResolver.openInputStream(optionsUri)?.bufferedReader()
+                ?: throw IllegalStateException("Could not open $optionsUri")
             reader.use {
                 val options = gson.fromJson(it, RomOptionsDto::class.java)
                     ?: throw IllegalStateException("Empty ROM options")
@@ -594,7 +611,7 @@ class FileSystemRomsRepository(
             }
         }.onFailure { throwable ->
             Log.w(TAG, "Failed to read ROM options for ${rom.fileName}", throwable)
-            notifyRomOptionsReadError(optionsDocument)
+            notifyRomOptionsReadError(optionsUri)
             rewriteRomOptionsFromCachedConfig(rom)
         }.getOrNull()
     }
@@ -667,8 +684,8 @@ class FileSystemRomsRepository(
         return romFileName.replaceAfterLast('.', "opts", "$romFileName.opts")
     }
 
-    private fun notifyRomOptionsReadError(optionsDocument: DocumentFile) {
-        val notificationKey = optionsDocument.uri.toString()
+    private fun notifyRomOptionsReadError(optionsUri: Uri) {
+        val notificationKey = optionsUri.toString()
         val shouldNotify = synchronized(romOptionsReadErrorNotifications) {
             romOptionsReadErrorNotifications.add(notificationKey)
         }

@@ -3,7 +3,7 @@ package me.magnum.melonds.domain.repositories
 import android.net.Uri
 import kotlinx.coroutines.flow.Flow
 import me.magnum.melonds.domain.model.Cheat
-import me.magnum.melonds.domain.model.CheatDatabase
+import me.magnum.melonds.common.cheats.ProgressTrackerInputStream
 import me.magnum.melonds.domain.model.CheatFolder
 import me.magnum.melonds.domain.model.CheatImportProgress
 import me.magnum.melonds.domain.model.Game
@@ -18,8 +18,7 @@ interface CheatsRepository {
     suspend fun getRomEnabledCheats(romInfo: RomInfo): List<Cheat>
     suspend fun updateCheatsStatus(cheats: List<Cheat>)
     suspend fun addCheatFolder(folderName: String, game: Game)
-    suspend fun deleteCheatDatabaseIfExists(databaseName: String)
-    suspend fun addCheatDatabase(databaseName: String): CheatDatabase
+    suspend fun replaceImportedCheats(stream: ProgressTrackerInputStream, onGameStart: (String) -> Unit)
     suspend fun addGameCheats(game: Game): Game
     suspend fun addCheat(folder: CheatFolder, cheat: Cheat)
     suspend fun addCustomCheat(folder: CheatFolder, cheatForm: CheatSubmissionForm)

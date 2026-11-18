@@ -709,6 +709,7 @@ class AndroidEmulatorManager(
     }
 
     override fun stopEmulator() = synchronized(sessionControlLock) {
+        if (activeNandSession == null) return
         if (sessionLoading) {
             sessionStopRequested = true
             return

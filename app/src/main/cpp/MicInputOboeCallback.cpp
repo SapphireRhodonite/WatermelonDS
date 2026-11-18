@@ -2,10 +2,14 @@
 #include "types.h"
 #include <algorithm>
 
-#define MIC_GAIN 10
-
-MicInputOboeCallback::MicInputOboeCallback(int bufferSize, std::mutex& micBufferMutex, std::ostream* recordingStream) : bufferSize(bufferSize), micBufferMutex(micBufferMutex), _recordingStream(recordingStream) {
+MicInputOboeCallback::MicInputOboeCallback(int bufferSize, std::mutex& micBufferMutex, int gain, std::ostream* recordingStream)
+    : bufferSize(bufferSize), micBufferMutex(micBufferMutex), gain(gain), _recordingStream(recordingStream) {
     this->buffer = new s16[bufferSize];
+}
+
+void MicInputOboeCallback::setGain(int gain) {
+    std::lock_guard lock(micBufferMutex);
+    this->gain = gain;
 }
 
 oboe::DataCallbackResult
@@ -43,7 +47,7 @@ MicInputOboeCallback::onAudioReady(oboe::AudioStream *stream, void *audioData, i
         float s = (float)s1 + ((s2 - s1) * res_timer);
 
         buffer[bufferOffset] = static_cast<s16>(std::clamp(
-            round(s) * MIC_GAIN, -32768.0f, 32767.0f));
+            round(s) * gain, -32768.0f, 32767.0f));
         bufferOffset++;
         if (bufferOffset >= maxlen)
             bufferOffset = 0;

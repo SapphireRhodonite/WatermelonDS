@@ -1816,6 +1816,17 @@ class EmulatorViewModel @Inject constructor(
         }
     }
 
+    fun cancelRomLaunch() {
+        val session = sessionCoroutineScope.coroutineContext[Job] ?: return
+        if (!session.isActive) return
+        session.cancel()
+        viewModelScope.launch {
+            session.join()
+            withContext(Dispatchers.IO) { emulatorManager.stopEmulator() }
+            _uiEvent.emit(EmulatorUiEvent.CloseEmulator)
+        }
+    }
+
     fun stopEmulator() {
         raBootstrapJob?.cancel()
         raSessionJob?.cancel()

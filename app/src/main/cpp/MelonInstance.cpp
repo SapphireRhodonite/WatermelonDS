@@ -2731,7 +2731,17 @@ MelonInstance::VulkanFrameTailResult MelonInstance::processFrameTail(
         }
 
         const u64 pushStartNs = currentRenderer == Renderer::Vulkan ? PerfNowNs() : 0;
-        const bool published = frameQueue.pushRenderedFrame(renderFrame, frameQueuePolicy);
+        bool (*hostService)(void*) = nullptr;
+        if (!sFrameTailWorkerActive && frameQueuePolicy.BlockEnqueueWhenBacklogged
+            && nds && nds->CanPollWMHost())
+        {
+            hostService = [](void* context) {
+                auto* console = static_cast<NDS*>(context);
+                console->PollWMHost();
+                return console->CanPollWMHost();
+            };
+        }
+        const bool published = frameQueue.pushRenderedFrame(renderFrame, frameQueuePolicy, hostService, nds);
         if (currentRenderer == Renderer::Vulkan && !sFrameTailWorkerActive)
         {
             vulkanUltimaEsperaColaNs = PerfNowNs() - pushStartNs;
@@ -3466,7 +3476,7 @@ u32 MelonInstance::runFrame(bool frameskipSolicitado, u64 wmFrameDeadline)
     u64 q4GetNs = 0, q4SubmitWaitNs = 0, q4PresentWaitNs = 0, q4OtherNs = 0;
     u32 q4Attempts = 0, q4Recycled = 0, q4SubmitWaitBlocking = 0, q4PresentWaitBlocking = 0;
     u64 q4StepNs = measureVulkanSetupPerf ? PerfNowNs() : 0;
-    vulkanQ4MeasureEnabled = measureVulkanSetupPerf;
+    vulkanQ4MeasureEnabled.store(measureVulkanSetupPerf, std::memory_order_relaxed);
     auto q4Step = [&](u64& bucket) {
         if (!measureVulkanSetupPerf)
             return;
@@ -4479,10 +4489,10 @@ void MelonInstance::setAudioOutputSpeedHint(double speed)
     nds->SPU.SetOutputSpeedHint(speed);
 }
 
-void MelonInstance::configureAudioOutputTransport(std::uint32_t frames)
+void MelonInstance::configureAudioOutputTransport(std::uint32_t frames, bool lowLatency)
 {
     nds->SPU.EnableOutputTimeStretch();
-    nds->SPU.SetOutputLatencyFrames(frames);
+    nds->SPU.SetOutputLatencyFrames(frames, lowLatency);
 }
 
 void MelonInstance::resetAudioOutputAdaptivo()
@@ -4909,7 +4919,11 @@ VulkanPresentationResult MelonInstance::presentVulkanFrame(
             compositionInputs,
             gpuWaitTimeoutNs,
             platformWaitTimeoutNs,
-            waitRunner);
+            waitRunner,
+            [&](const VulkanCausalWaitOperation& submit) {
+                return runVulkanPresentationOperationUnlocked(
+                    presentationOperationLock, "VulkanPump.SubmitSurface", submit);
+            });
         if (vulkanQ4MeasureEnabled)
         {
             vulkanQ4PumpCallWindow.Add(PerfNowNs() - q4CallStartNs);
@@ -5066,6 +5080,41 @@ bool MelonInstance::waitForVulkanPresentationConsumptionConcurrent(
     return waitSucceeded;
 }
 
+bool MelonInstance::runVulkanPresentationOperationUnlocked(
+    std::unique_lock<std::mutex>& operationLock,
+    const char* traceName,
+    const VulkanCausalWaitOperation& operation)
+{
+    const bool measure = vulkanQ4MeasureEnabled.load(std::memory_order_relaxed);
+    const u64 startNs = measure ? PerfNowNs() : 0;
+    vulkanPresentationUnlockedWaitActive = true;
+    operationLock.unlock();
+
+    struct ResumeOperation
+    {
+        MelonInstance& instance;
+        std::unique_lock<std::mutex>& lock;
+        bool measure;
+        u64 startNs;
+
+        ~ResumeOperation()
+        {
+            ATrace_endSection();
+            lock.lock();
+            instance.vulkanPresentationOperationCondition.wait(lock, [&] {
+                return instance.vulkanPresentationConcurrentTokenWaits == 0;
+            });
+            if (measure)
+                instance.vulkanQ4PumpUnlockedNs += PerfNowNs() - startNs;
+            instance.vulkanPresentationUnlockedWaitActive = false;
+            instance.vulkanPresentationOperationCondition.notify_all();
+        }
+    } resume{*this, operationLock, measure, startNs};
+
+    ATrace_beginSection(traceName != nullptr ? traceName : "VulkanPump.WaitGpu");
+    return operation();
+}
+
 VulkanCausalWaitResult MelonInstance::runVulkanPresentationWaitUnlocked(
     std::unique_lock<std::mutex>& operationLock,
     Frame* frame,
@@ -5093,36 +5142,8 @@ VulkanCausalWaitResult MelonInstance::runVulkanPresentationWaitUnlocked(
     VulkanSurfacePresenter* const expectedPresenter =
         vulkanSurfacePresenter.get();
 
-    vulkanPresentationUnlockedWaitActive = true;
-    operationLock.unlock();
-    const u64 q4UnlockedStartNs = vulkanQ4MeasureEnabled ? PerfNowNs() : 0;
-
-    bool waitSucceeded = false;
-    bool traceOpen = false;
-    try
-    {
-        ATrace_beginSection(
-            traceName != nullptr ? traceName : "VulkanPump.WaitGpu");
-        traceOpen = true;
-        waitSucceeded = operation();
-        ATrace_endSection();
-        traceOpen = false;
-    }
-    catch (...)
-    {
-        if (traceOpen)
-            ATrace_endSection();
-        if (vulkanQ4MeasureEnabled)
-            vulkanQ4PumpUnlockedNs += PerfNowNs() - q4UnlockedStartNs;
-        operationLock.lock();
-        vulkanPresentationUnlockedWaitActive = false;
-        vulkanPresentationOperationCondition.notify_all();
-        throw;
-    }
-
-    if (vulkanQ4MeasureEnabled)
-        vulkanQ4PumpUnlockedNs += PerfNowNs() - q4UnlockedStartNs;
-    operationLock.lock();
+    const bool waitSucceeded = runVulkanPresentationOperationUnlocked(
+        operationLock, traceName, operation);
     VulkanCausalWaitResult result = waitSucceeded
         ? VulkanCausalWaitResult::Ready
         : VulkanCausalWaitResult::TimedOut;
@@ -5139,8 +5160,6 @@ VulkanCausalWaitResult MelonInstance::runVulkanPresentationWaitUnlocked(
         result = VulkanCausalWaitResult::GenerationChanged;
     }
 
-    vulkanPresentationUnlockedWaitActive = false;
-    vulkanPresentationOperationCondition.notify_all();
     return result;
 }
 

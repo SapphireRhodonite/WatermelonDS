@@ -32,7 +32,7 @@ import com.squareup.picasso.Picasso
 import me.magnum.melonds.R
 import me.magnum.melonds.databinding.ViewLayoutEditorManagerBinding
 import me.magnum.melonds.domain.model.RuntimeBackground
-import me.magnum.melonds.domain.model.consoleAspectRatio
+import me.magnum.melonds.domain.model.layout.ScreenAspectRatio
 import me.magnum.melonds.domain.model.layout.LayoutComponent
 import me.magnum.melonds.domain.model.layout.VirtualButtonMode
 import me.magnum.melonds.extensions.setBackgroundMode
@@ -73,12 +73,6 @@ class LayoutEditorManagerView(
         fun onExit()
     }
 
-    private enum class ScreenAspectRatio(val ratio: Float?) {
-        RATIO_4_3(consoleAspectRatio),
-        RATIO_16_9(16 / 9f),
-        UNRESTRICTED(null)
-    }
-
     private enum class AspectRatioEnforcementPriority {
         WIDTH, HEIGHT,
     }
@@ -97,10 +91,7 @@ class LayoutEditorManagerView(
     private var currentHeightScale = 0f
     private var selectedViewIsScreen = false
     private var selectedViewSupportsAspectRatio = false
-    private var selectedScreenComponent: LayoutComponent? = null
     private var selectedAspectRatio = ScreenAspectRatio.RATIO_4_3
-    private var topAspectRatio = ScreenAspectRatio.RATIO_4_3
-    private var bottomAspectRatio = ScreenAspectRatio.RATIO_4_3
     private var updatingAspectSpinner = false
     private var updatingScalingControls = false
 
@@ -280,14 +271,11 @@ class LayoutEditorManagerView(
             hideScalingControls(false)
             selectedViewIsScreen = view.component.isScreen()
             selectedViewSupportsAspectRatio = view.component.supportsAspectRatioSelection()
-            selectedScreenComponent = view.component
             binding.buttonInputMode.isVisible = view.component.supportsButtonMode()
             binding.buttonInputMode.text = resources.getString(R.string.button_mode_value, buttonModeLabel(view.buttonMode))
-            selectedAspectRatio = when (view.component) {
-                LayoutComponent.TOP_SCREEN -> topAspectRatio
-                LayoutComponent.BOTTOM_SCREEN -> bottomAspectRatio
-                else -> ScreenAspectRatio.UNRESTRICTED
-            }
+            selectedAspectRatio = if (selectedViewSupportsAspectRatio) {
+                view.screenAspectRatio ?: ScreenAspectRatio.fromRect(view.getRect())
+            } else ScreenAspectRatio.UNRESTRICTED
             showScalingControls(
                 widthScale,
                 heightScale,
@@ -405,17 +393,17 @@ class LayoutEditorManagerView(
         binding.spinnerAspectRatio.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>, view: View?, position: Int, id: Long) {
                 if (!selectedViewSupportsAspectRatio || updatingAspectSpinner) return
-                val targetComponent = selectedScreenComponent ?: return
-                selectedAspectRatio = ScreenAspectRatio.entries[position]
-                when (targetComponent) {
-                    LayoutComponent.TOP_SCREEN -> topAspectRatio = selectedAspectRatio
-                    LayoutComponent.BOTTOM_SCREEN -> bottomAspectRatio = selectedAspectRatio
-                    else -> { }
-                }
+                val mode = ScreenAspectRatio.entries[position]
+                if (mode == selectedAspectRatio) return
+                val editor = binding.viewLayoutEditor
+                val component = editor.getSelectedComponent() ?: return
+                val selected = editor.getLayoutComponentView(component) ?: return
+                selected.screenAspectRatio = mode
+                selectedAspectRatio = mode
                 enforceAspectRatio(selectedAspectRatio, WIDTH)
-                binding.viewLayoutEditor.scaleSelectedView(currentWidthScale, currentHeightScale)
+                editor.scaleSelectedView(currentWidthScale, currentHeightScale)
                 binding.spinnerAspectRatio.post {
-                    binding.viewLayoutEditor.selectComponent(targetComponent)
+                    editor.selectComponent(component)
                 }
             }
 

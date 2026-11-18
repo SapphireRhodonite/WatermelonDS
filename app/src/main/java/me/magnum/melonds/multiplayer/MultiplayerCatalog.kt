@@ -3,6 +3,7 @@ package me.magnum.melonds.multiplayer
 import android.content.res.Resources
 import me.magnum.melonds.R
 import me.magnum.melonds.domain.model.CartridgeId
+import me.magnum.melonds.domain.model.rom.Rom
 
 internal class MultiplayerCatalog(resources: Resources) {
     data class Entry(
@@ -24,5 +25,18 @@ internal class MultiplayerCatalog(resources: Resources) {
         }
     }
 
-    operator fun get(id: CartridgeId?): Entry? = id?.let { entries["${it.gameCode}.${it.revision}"] ?: entries[it.gameCode] }
+    private val editionsWithVariants = entries.keys.filter { it.count { ch -> ch == '.' } == 2 }
+        .mapTo(mutableSetOf()) { it.substringBeforeLast('.') }
+
+    operator fun get(rom: Rom): Entry? = lookup(rom.cartridge) { rom.retroAchievementsHash }
+
+    fun lookup(id: CartridgeId?, readContentHash: () -> String?): Entry? {
+        if (id == null) return null
+        val edition = "${id.gameCode}.${id.revision}"
+        if (edition in editionsWithVariants) {
+            val hash = readContentHash()
+            if (hash != null) entries["$edition.$hash"]?.let { return it }
+        }
+        return entries[edition] ?: entries[id.gameCode]
+    }
 }

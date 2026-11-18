@@ -500,7 +500,8 @@ void FrameQueue::validateRenderFrame(Frame* frame, int requiredWidth, int requir
         frame->renderTimelineValue = 0;
 }
 
-bool FrameQueue::pushRenderedFrame(Frame* frame, const FrameQueuePolicy& requestedPolicy)
+bool FrameQueue::pushRenderedFrame(Frame* frame, const FrameQueuePolicy& requestedPolicy,
+    bool (*hostService)(void*), void* hostContext)
 {
     std::unique_lock lock(frameLock);
     if (frame == nullptr)
@@ -514,13 +515,23 @@ bool FrameQueue::pushRenderedFrame(Frame* frame, const FrameQueuePolicy& request
     if (policy.BlockEnqueueWhenBacklogged)
     {
 
-        freeFrameReadyCondition.wait(lock, [&] {
+        const auto canFinishWait = [&] {
             const u64 pendingDepth = static_cast<u64>(presentQueue.size())
                 + (pendingPresentFrame != nullptr ? 1u : 0u);
             return publicationsSuspended
                 || publicationGeneration != frameGeneration
                 || pendingDepth < policy.MaxBacklogDepth;
-        });
+        };
+        while (hostService && !freeFrameReadyCondition.wait_for(
+            lock, std::chrono::milliseconds(1), canFinishWait))
+        {
+            lock.unlock();
+            if (!hostService(hostContext))
+                hostService = nullptr;
+            lock.lock();
+        }
+        if (!hostService)
+            freeFrameReadyCondition.wait(lock, canFinishWait);
 
         if (publicationsSuspended || publicationGeneration != frameGeneration)
             return recycleCanceledPublicationLocked(frame);

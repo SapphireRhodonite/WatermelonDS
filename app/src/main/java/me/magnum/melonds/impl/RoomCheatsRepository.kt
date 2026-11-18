@@ -2,15 +2,22 @@ package me.magnum.melonds.impl
 
 import android.content.Context
 import android.net.Uri
+import androidx.room.withTransaction
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.workDataOf
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
+import me.magnum.melonds.common.cheats.CheatDatabaseParserListener
+import me.magnum.melonds.common.cheats.ProgressTrackerInputStream
+import me.magnum.melonds.common.cheats.XmlCheatDatabaseParser
 import me.magnum.melonds.common.workers.CheatImportWorker
 import me.magnum.melonds.database.MelonDatabase
 import me.magnum.melonds.database.entities.CheatDatabaseEntity
@@ -139,30 +146,49 @@ class RoomCheatsRepository(
         settingsBackupManager.requestMirrorWrite()
     }
 
-    override suspend fun deleteCheatDatabaseIfExists(databaseName: String) {
-        if (databaseName == CheatDatabaseEntity.CUSTOM_CHEATS_DATABASE_NAME) {
-            // Don't allow the custom cheat database to be deleted
-            return
+    override suspend fun replaceImportedCheats(stream: ProgressTrackerInputStream, onGameStart: (String) -> Unit) {
+        database.withTransaction {
+            val transactionContext = currentCoroutineContext()
+            var databaseStarted = false
+            XmlCheatDatabaseParser().parseCheatDatabase(stream, object : CheatDatabaseParserListener {
+                override fun onDatabaseParseStart(databaseName: String): CheatDatabase = runBlocking(transactionContext) {
+                    // Don't allow the custom cheat database to be deleted
+                    require(databaseName.isNotBlank() && databaseName != CheatDatabaseEntity.CUSTOM_CHEATS_DATABASE_NAME)
+                    check(!databaseStarted)
+                    val dao = database.cheatDatabaseDao()
+                    dao.deleteImportedDatabases(CheatDatabaseEntity.CUSTOM_CHEATS_DATABASE_ID)
+                    database.cheatFolderDao().deleteEmptyFolders()
+                    database.gameDao().deleteEmptyGames()
+                    val id = dao.insertCheatDatabase(CheatDatabaseEntity(null, databaseName))
+                    databaseStarted = true
+                    CheatDatabase(id, databaseName)
+                }
+
+                override fun onGameParseStart(gameName: String) {
+                    transactionContext.ensureActive()
+                    onGameStart(gameName)
+                }
+
+                override fun onGameParsed(game: Game) {
+                    runBlocking(transactionContext) { insertGameCheats(game) }
+                }
+
+                override fun onParseComplete() {
+                    check(databaseStarted)
+                    transactionContext.ensureActive()
+                }
+            })
         }
-
-        database.cheatDatabaseDao().deleteCheatDatabase(databaseName)
-        database.cheatFolderDao().deleteEmptyFolders()
-        database.gameDao().deleteEmptyGames()
         settingsBackupManager.requestMirrorWrite()
-    }
-
-    override suspend fun addCheatDatabase(databaseName: String): CheatDatabase {
-        val cheatDatabaseEntity = CheatDatabaseEntity(
-            null,
-            databaseName,
-        )
-
-        val databaseId = database.cheatDatabaseDao().insertCheatDatabase(cheatDatabaseEntity)
-        settingsBackupManager.requestMirrorWrite()
-        return CheatDatabase(databaseId, databaseName)
     }
 
     override suspend fun addGameCheats(game: Game): Game {
+        val storedGame = database.withTransaction { insertGameCheats(game) }
+        settingsBackupManager.requestMirrorWrite()
+        return storedGame
+    }
+
+    private suspend fun insertGameCheats(game: Game): Game {
         val gameEntity = GameEntity(
             null,
             game.name,
@@ -199,7 +225,6 @@ class RoomCheatsRepository(
         }
         database.cheatDao().insertCheats(cheatEntities)
 
-        settingsBackupManager.requestMirrorWrite()
         return Game(
             id = insertedGame.id,
             name = insertedGame.name,

@@ -160,7 +160,7 @@ namespace MelonDSAndroid
 
         if (currentInstance)
             currentInstance->configureAudioOutputTransport(
-                std::max(requestedBufferFrames, 2 * framesPerBurst));
+                std::max(requestedBufferFrames, 2 * framesPerBurst), requestedAudioLatency == 0);
 
         if (areRendererDebugToolsEnabled()) [[unlikely]]
         {
@@ -527,9 +527,9 @@ namespace MelonDSAndroid
 
     // MICROPHONE
 
-    void setupMicInputStream()
+    void setupMicInputStream(int gain)
     {
-        micInputCallback = std::make_shared<MicInputOboeCallback>(MIC_BUFFER_SIZE, micBufferMutex);
+        micInputCallback = std::make_shared<MicInputOboeCallback>(MIC_BUFFER_SIZE, micBufferMutex, gain);
         oboe::AudioStreamBuilder micStreamBuilder;
         micStreamBuilder.setChannelCount(1);
         micStreamBuilder.setFramesPerCallback(1024);
@@ -685,7 +685,7 @@ namespace MelonDSAndroid
             setupAudioOutputStream(audioSettings.audioLatency, audioSettings.volume);
 
         if (audioSettings.micSource == 2)
-            setupMicInputStream();
+            setupMicInputStream(audioSettings.micGain);
     }
 
     void updateAudioSettings(AudioSettings audioSettings)
@@ -721,7 +721,9 @@ namespace MelonDSAndroid
             cleanupMicInputStream();
         } else if (oldMicSource != 2 && audioSettings.micSource == 2) {
             // Now using device mic. Setup stream
-            setupMicInputStream();
+            setupMicInputStream(audioSettings.micGain);
+        } else if (micInputCallback) {
+            micInputCallback->setGain(audioSettings.micGain);
         }
 
         {

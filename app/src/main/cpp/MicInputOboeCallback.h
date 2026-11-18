@@ -15,13 +15,14 @@ public:
     int bufferCount = 0;
     float micSampleFrac = 0;
 
-    MicInputOboeCallback(int bufferSize, std::mutex& micBufferMutex) : MicInputOboeCallback(bufferSize, micBufferMutex, nullptr) { };
-    MicInputOboeCallback(int bufferSize, std::mutex& micBufferMutex, std::ostream* recordingStream);
+    MicInputOboeCallback(int bufferSize, std::mutex& micBufferMutex, int gain, std::ostream* recordingStream = nullptr);
     ~MicInputOboeCallback();
+    void setGain(int gain);
     oboe::DataCallbackResult onAudioReady(oboe::AudioStream *stream, void *audioData, int32_t numFrames) override;
 
 private:
     std::mutex& micBufferMutex;
+    int gain;
     std::ostream* _recordingStream;
 };
 

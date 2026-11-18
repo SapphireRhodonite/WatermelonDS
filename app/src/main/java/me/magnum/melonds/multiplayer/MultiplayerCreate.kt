@@ -128,7 +128,7 @@ fun MultiplayerCreate(
     var query by rememberSaveable { mutableStateOf("") }
     val catalog by produceState<MultiplayerCatalog?>(null, viewModel) { value = viewModel.gameCatalog() }
     val eligible = remember(roms, play, showAll, catalog) {
-        if (showAll) roms else roms.filter { (catalog?.get(it.cartridge)?.players(play) ?: 0) >= 2 }
+        if (showAll) roms else roms.filter { (catalog?.get(it)?.players(play) ?: 0) >= 2 }
     }
     val shown = remember(eligible, query, filter) {
         when {
@@ -460,7 +460,7 @@ private fun GameStep(
                     val name = romDisplayName(item)
                     var focused by remember { mutableStateOf(false) }
                     val marquee = if (focused) Modifier.basicMarquee(iterations = Int.MAX_VALUE) else Modifier
-                    val modes = catalog?.get(item.cartridge)
+                    val modes = catalog?.get(item)
                     val players = modes?.players(play) ?: 0
                     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                         Pressable(

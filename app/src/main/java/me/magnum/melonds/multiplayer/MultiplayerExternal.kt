@@ -198,7 +198,7 @@ private fun ExternalGame(viewModel: MultiplayerViewModel, focus: MultiplayerFocu
     val catalog by produceState<MultiplayerCatalog?>(null, viewModel) { value = viewModel.gameCatalog() }
     val rom = focus.rom
     val name = romDisplayName(rom)
-    val modes = catalog?.get(rom.cartridge)
+    val modes = catalog?.get(rom)
     ExternalShowcase(rom, name) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Tag(romPlatformLabel(rom), TagKind.NEUTRAL)

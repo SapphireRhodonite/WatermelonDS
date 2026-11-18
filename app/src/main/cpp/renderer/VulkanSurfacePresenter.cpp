@@ -1215,7 +1215,8 @@ VulkanPresentationResult VulkanSurfacePresenter::presentFrame(
     const VulkanCompositionInputs& inputs,
     u64 gpuWaitTimeoutNs,
     u64 timeoutNs,
-    const VulkanCausalWaitRunner& waitRunner)
+    const VulkanCausalWaitRunner& waitRunner,
+    const VulkanSurfaceSubmitRunner& submitRunner)
 {
     if (!initialized)
         return VulkanPresentationResult::Stopped;
@@ -1904,15 +1905,17 @@ VulkanPresentationResult VulkanSurfacePresenter::presentFrame(
         u64 surfacePresentTimelineValue = 0;
         bool queueSubmitSucceeded = false;
         bool presentAccepted = false;
-        const bool submitSucceeded = submitSurfaceCommands(
-            surfaceState,
-            imageIndex,
-            sourceReadySemaphore,
-            sourceReadyValue,
-            surfacePresentCpuNs,
-            surfacePresentTimelineValue,
-            queueSubmitSucceeded,
-            presentAccepted);
+        const bool submitSucceeded = submitRunner([&] {
+            return submitSurfaceCommands(
+                surfaceState,
+                imageIndex,
+                sourceReadySemaphore,
+                sourceReadyValue,
+                surfacePresentCpuNs,
+                surfacePresentTimelineValue,
+                queueSubmitSucceeded,
+                presentAccepted);
+        });
         if (queueSubmitSucceeded)
         {
             submittedAnySurface = true;

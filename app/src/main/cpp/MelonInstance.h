@@ -129,7 +129,7 @@ public:
     AudioOutputAdaptiveSnapshot getAudioOutputAdaptiveSnapshot() const noexcept;
     AudioOutputControllerSnapshot getAudioOutputControllerSnapshot() const noexcept;
     void setAudioOutputSpeedHint(double speed);
-    void configureAudioOutputTransport(std::uint32_t frames);
+    void configureAudioOutputTransport(std::uint32_t frames, bool lowLatency);
     void resetAudioOutputAdaptivo();
     bool takeScreenshot();
     std::vector<u32> getScreenshotPixels();
@@ -440,6 +440,10 @@ private:
     u32 vulkanPresentationConcurrentTokenWaits = 0;
     std::unique_lock<std::mutex> acquireVulkanPresentationOperation();
     bool waitForVulkanPresentationConsumptionConcurrent(Frame* frame);
+    bool runVulkanPresentationOperationUnlocked(
+        std::unique_lock<std::mutex>& operationLock,
+        const char* traceName,
+        const VulkanCausalWaitOperation& operation);
     VulkanCausalWaitResult runVulkanPresentationWaitUnlocked(
         std::unique_lock<std::mutex>& operationLock,
         Frame* frame,
@@ -672,7 +676,7 @@ private:
     PerfSampleWindow<120> vulkanQ4OtherWindow;
     PerfSampleWindow<120> vulkanQ4LockWaitWindow;
     PerfSampleWindow<120> vulkanQ4ConsumptionWindow;
-    bool vulkanQ4MeasureEnabled = false;
+    std::atomic<bool> vulkanQ4MeasureEnabled{false};
     PerfSampleWindow<120> vulkanQ4PumpHoldWindow;
     PerfSampleWindow<120> vulkanQ4PumpTotalWindow;
     PerfSampleWindow<120> vulkanQ4PumpUnlockedWindow;

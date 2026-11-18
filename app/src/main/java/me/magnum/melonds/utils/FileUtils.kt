@@ -21,6 +21,18 @@ object FileUtils {
     private const val PRIMARY_VOLUME_NAME = "primary"
     private const val HOME_VOLUME_NAME = "home"
 
+    fun getExternalStorageDocumentId(context: Context, file: File): String? {
+        val volume = context.getSystemService<StorageManager>()?.getStorageVolume(file) ?: return null
+        val volumeId = if (volume.isPrimary) PRIMARY_VOLUME_NAME else volume.uuid ?: return null
+        val root = when {
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.R -> volume.directory
+            volume.isPrimary -> Environment.getExternalStorageDirectory()
+            else -> getVolumePath(volumeId, context)?.let(::File)
+        } ?: return null
+        if (!file.startsWith(root)) return null
+        return "$volumeId:${file.relativeTo(root).path}"
+    }
+
     fun getAbsolutePathFromSAFUri(context: Context, safResultUri: Uri?): String? {
         if (safResultUri == null) {
             return null

@@ -49,6 +49,7 @@
 #include "performancehint/PerformanceHintWorker.h"
 
 #include "Platform.h"
+#include "WMService.h"
 
 #ifndef MELONDS_ANDROID_DEBUG_BUILD
 #define MELONDS_ANDROID_DEBUG_BUILD 0
@@ -3309,6 +3310,7 @@ void* emulate(void*)
 
         bool wifiClient = false;
         u32 nLines = 0;
+        u64 wmWaitUS = 0;
         {
             std::lock_guard<std::mutex> coreLock(emulationCoreAccessMutex);
             frameskipSolicitadoEsteFrame = frameskipSolicitado;
@@ -3323,11 +3325,14 @@ void* emulate(void*)
                     wmFrameDeadline = std::chrono::duration_cast<std::chrono::microseconds>(
                         budgetClock.time_since_epoch()).count() + static_cast<u64>(remainingMs * 1000.0);
             }
+            const u64 wmWaitBefore = multiplayerActive ? melonDS::WMService::ThreadWaitTimeUS() : 0;
             nLines = MelonDSAndroid::loop(frameskipSolicitado,
                                          frameskipMode.load(std::memory_order_acquire),
                                          frameskipManualValue.load(std::memory_order_acquire),
                                          vulkanDrsEnabled.load(std::memory_order_acquire),
                                          drsDeuda, wmFrameDeadline);
+            if (multiplayerActive)
+                wmWaitUS = melonDS::WMService::ThreadWaitTimeUS() - wmWaitBefore;
             wifiClient = MelonDSAndroid::isWifiClient();
             drsDeuda = false;
             frameskipConcedidoEsteFrame = MelonDSAndroid::frameskipConcedidoUltimoFrame();
@@ -3409,6 +3414,8 @@ void* emulate(void*)
                 frameskipSolicitado = nLines > 0
                     && frameskipInhibidoFotogramas == 0
                     && !ffActivo
+                    && (!wmWaitUS || std::chrono::duration<double, std::milli>(frameDuration).count()
+                                        - static_cast<double>(wmWaitUS) / 1000.0 > frameTimeStep)
                     && frameLimitError <= -(frameTimeStep * 0.5);
 
             if (round(frameLimitError) > 0.0)

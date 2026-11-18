@@ -70,6 +70,7 @@ struct AudioSettings
     int audioBitrate;
     int audioLatency;
     int micSource;
+    int micGain = 1;
 };
 
 struct SdCardSettings

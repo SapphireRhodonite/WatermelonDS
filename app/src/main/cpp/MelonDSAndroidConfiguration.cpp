@@ -184,6 +184,18 @@ MelonDSAndroid::EmulatorConfiguration MelonDSAndroidConfiguration::buildEmulator
     jclass emulatorConfigurationClass = env->GetObjectClass(emulatorConfiguration);
     if (emulatorConfigurationClass == nullptr || env->ExceptionCheck())
         return {};
+    const jfieldID micGainField = env->GetFieldID(emulatorConfigurationClass, "micGain", "I");
+    if (micGainField == nullptr || env->ExceptionCheck())
+    {
+        env->DeleteLocalRef(emulatorConfigurationClass);
+        return {};
+    }
+    const jint micGain = env->GetIntField(emulatorConfiguration, micGainField);
+    if (env->ExceptionCheck())
+    {
+        env->DeleteLocalRef(emulatorConfigurationClass);
+        return {};
+    }
     const jfieldID lowLatencyField = env->GetFieldID(emulatorConfigurationClass, "lowLatencyEnabled", "Z");
     if (lowLatencyField == nullptr || env->ExceptionCheck())
     {
@@ -329,7 +341,8 @@ MelonDSAndroid::EmulatorConfiguration MelonDSAndroidConfiguration::buildEmulator
         .audioInterpolation = audioInterpolation,
         .audioBitrate = audioBitrate,
         .audioLatency = audioLatency,
-        .micSource = micSource
+        .micSource = micSource,
+        .micGain = micGain
     };
     finalEmulatorConfiguration.firmwareConfiguration = buildFirmwareConfiguration(env, firmwareConfigurationObject);
     finalEmulatorConfiguration.rewindEnabled = enableRewind ? 1 : 0;

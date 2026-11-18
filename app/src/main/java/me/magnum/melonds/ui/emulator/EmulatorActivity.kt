@@ -1214,6 +1214,7 @@ open class EmulatorActivity : AppCompatActivity() {
             lifecycle.repeatOnLifecycle(Lifecycle.State.CREATED) {
                 viewModel.emulatorState.collectLatest {
                     updateJoystickDispatch()
+                    backPressedCallback.isEnabled = it.isRunning() || it is EmulatorState.ValidatingRom || it is EmulatorState.LoadingRom
                     if (!it.isRunning()) releaseVirtualButtonInputs()
                     when (it) {
                         is EmulatorState.Uninitialized -> {
@@ -1259,7 +1260,6 @@ open class EmulatorActivity : AppCompatActivity() {
                             binding.progressLoading.isGone = true
                             binding.textLoadingDetail.isGone = true
                             binding.viewLayoutControls.isVisible = true
-                            backPressedCallback.isEnabled = true
                             scheduleStartupPresentationRefreshes()
                             if (
                                 lifecycle.currentState.isAtLeast(Lifecycle.State.RESUMED) &&
@@ -2349,7 +2349,9 @@ open class EmulatorActivity : AppCompatActivity() {
     }
 
     private fun handleBackPressed() {
-        if (isRewindWindowOpen()) {
+        if (!viewModel.emulatorState.value.isRunning()) {
+            viewModel.cancelRomLaunch()
+        } else if (isRewindWindowOpen()) {
             closeRewindWindow()
         } else {
             viewModel.pauseEmulator(true)

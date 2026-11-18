@@ -2,6 +2,7 @@ package me.magnum.melonds.impl.dtos.layout
 
 import com.google.gson.annotations.SerializedName
 import me.magnum.melonds.domain.model.layout.PositionedLayoutComponent
+import me.magnum.melonds.domain.model.layout.ScreenAspectRatio
 import me.magnum.melonds.domain.model.layout.VirtualButtonMode
 import me.magnum.melonds.utils.enumValueOfIgnoreCase
 
@@ -16,6 +17,8 @@ data class PositionedLayoutComponentDto(
     val onTop: Boolean? = null,
     @SerializedName("buttonMode")
     val buttonMode: String? = null,
+    @SerializedName("screenAspectRatio")
+    val screenAspectRatio: String? = null,
 ) {
 
     companion object {
@@ -26,6 +29,7 @@ data class PositionedLayoutComponentDto(
                 positionedLayoutComponent.alpha,
                 positionedLayoutComponent.onTop,
                 positionedLayoutComponent.buttonMode.takeUnless { it == VirtualButtonMode.NORMAL }?.name,
+                positionedLayoutComponent.screenAspectRatio?.name,
             )
         }
     }
@@ -37,6 +41,7 @@ data class PositionedLayoutComponentDto(
             alpha ?: 1f,
             onTop ?: false,
             VirtualButtonMode.entries.firstOrNull { it.name.equals(buttonMode, ignoreCase = true) } ?: VirtualButtonMode.NORMAL,
+            ScreenAspectRatio.entries.firstOrNull { it.name == screenAspectRatio },
         )
     }
 }

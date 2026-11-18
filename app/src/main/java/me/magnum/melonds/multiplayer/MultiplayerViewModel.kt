@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -164,7 +165,7 @@ class MultiplayerViewModel @Inject constructor(
                     result == 0
                 }
             } catch (error: Exception) {
-                if (error is CancellationException) throw error
+                if (error is CancellationException && error !is TimeoutCancellationException) throw error
                 android.util.Log.e("Multiplayer", "Could not open the room", error)
                 mutableFailure.value = Failure.Message(me.magnum.melonds.R.string.multiplayer_direct_failed)
                 false
@@ -204,7 +205,7 @@ class MultiplayerViewModel @Inject constructor(
                 if (result != 0) mutableFailure.value = Failure.Message(code(result))
                 result == 0
             } catch (error: Exception) {
-                if (error is CancellationException) throw error
+                if (error is CancellationException && error !is TimeoutCancellationException) throw error
                 android.util.Log.e("Multiplayer", "Could not join the room", error)
                 mutableFailure.value = Failure.Direct(room)
                 false
@@ -226,7 +227,7 @@ class MultiplayerViewModel @Inject constructor(
                 if (result != 0) mutableFailure.value = Failure.Message(code(result))
                 result == 0
             } catch (error: Exception) {
-                if (error is CancellationException) throw error
+                if (error is CancellationException && error !is TimeoutCancellationException) throw error
                 mutableFailure.value = Failure.Message(me.magnum.melonds.R.string.multiplayer_direct_stop_failed)
                 false
             } finally {
@@ -280,7 +281,14 @@ class MultiplayerViewModel @Inject constructor(
             val id = sourceInfo(current)?.cartridge
             romsRepository.updateCartridge(current, id)
             if (id == null || (rom?.cartridge != null && rom.cartridge != id)) return@withContext null
-            if (!showAll && (catalog[id]?.players(play) ?: 0) < 2) return@withContext null
+            if (!showAll) {
+                val modes = catalog.lookup(id) {
+                    processors.getFileRomProcessorForFileName(current.fileName)
+                        ?.getRomFromUri(current.uri, current.parentTreeUri)?.retroAchievementsHash
+                        ?: current.retroAchievementsHash
+                }
+                if ((modes?.players(play) ?: 0) < 2) return@withContext null
+            }
             MultiplayerRoom.Game(current.config.customName ?: current.name, id.gameCode, current.fileName)
         }
         if (game == null) mutableFailure.value = Failure.Message(R.string.mp_selection_changed)
