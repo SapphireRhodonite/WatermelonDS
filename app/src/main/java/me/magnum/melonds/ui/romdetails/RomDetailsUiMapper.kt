@@ -72,6 +72,8 @@ class RomDetailsUiMapper(
             RomGbaSlotConfig.RumblePak -> RomGbaSlotConfigUiModel(type = RomGbaSlotConfigUiModel.Type.RumblePak)
             RomGbaSlotConfig.MemoryExpansion -> RomGbaSlotConfigUiModel(type = RomGbaSlotConfigUiModel.Type.MemoryExpansion)
             RomGbaSlotConfig.AnalogInput -> RomGbaSlotConfigUiModel(type = RomGbaSlotConfigUiModel.Type.AnalogInput)
+            RomGbaSlotConfig.MotionPakHomebrew -> RomGbaSlotConfigUiModel(type = RomGbaSlotConfigUiModel.Type.MotionPakHomebrew)
+            RomGbaSlotConfig.MotionPakRetail -> RomGbaSlotConfigUiModel(type = RomGbaSlotConfigUiModel.Type.MotionPakRetail)
         }
     }
 }

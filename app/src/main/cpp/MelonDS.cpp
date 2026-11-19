@@ -711,6 +711,10 @@ namespace MelonDSAndroid
         {
             instance->loadGbaMemoryExpansion();
         }
+        else if (gbaSlotConfig->type == MOTION_PAK_HOMEBREW || gbaSlotConfig->type == MOTION_PAK_RETAIL)
+        {
+            instance->loadMotionPak(gbaSlotConfig->type == MOTION_PAK_RETAIL);
+        }
         else if (gbaSlotConfig->type == ANALOG_INPUT)
         {
             Platform::Log(Platform::LogLevel::Warn, "MelonDSAndroid: enabling Slot-2 analog input addon\n");
@@ -786,6 +790,12 @@ namespace MelonDSAndroid
     {
         if (instance)
             instance->releaseKey(key);
+    }
+
+    void updateMotionData(float ax, float ay, float az, float rx, float ry, float rz)
+    {
+        if (auto currentInstance = GetInstanceSnapshot())
+            currentInstance->updateMotionData(ax, ay, az, rx, ry, rz);
     }
 
     void setSlot2AnalogInput(float x, float y)

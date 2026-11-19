@@ -72,6 +72,8 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.filterIsInstance
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -116,6 +118,8 @@ import me.magnum.melonds.ui.emulator.component.RaPendingExitContext
 import me.magnum.melonds.ui.emulator.component.RaPendingModalState
 import me.magnum.melonds.ui.emulator.component.RaPendingSyncResult
 import me.magnum.melonds.ui.emulator.input.ConnectedControllerManager
+import me.magnum.melonds.domain.model.rom.config.RomGbaSlotConfig
+import me.magnum.melonds.ui.emulator.input.EmulatorMotionManager
 import me.magnum.melonds.ui.emulator.input.EmulatorRumbleManager
 import me.magnum.melonds.ui.emulator.input.FrontendInputHandler
 import me.magnum.melonds.ui.emulator.input.INativeInputListener
@@ -171,6 +175,7 @@ open class EmulatorActivity : AppCompatActivity() {
         const val KEY_URI = "uri"
         const val KEY_BOOT_FIRMWARE_CONSOLE = "boot_firmware_console"
         const val KEY_BOOT_FIRMWARE_ONLY = "boot_firmware_only"
+        const val KEY_START_MULTIPLAYER_FIRMWARE = "start_multiplayer_firmware"
         private const val STARTUP_PRESENTATION_REFRESH_ATTEMPTS = 24
         private const val STARTUP_PRESENTATION_REFRESH_INTERVAL_MS = 100L
         private const val OVERLAY_FOCUS_ATTEMPTS = 12
@@ -189,10 +194,11 @@ open class EmulatorActivity : AppCompatActivity() {
             }
         }
 
-        fun getFirmwareEmulatorActivityIntent(context: Context, consoleType: ConsoleType): Intent {
+        fun getFirmwareEmulatorActivityIntent(context: Context, consoleType: ConsoleType, startMultiplayerSession: Boolean = false): Intent {
             return Intent(context, EmulatorActivity::class.java).apply {
                 putExtra(KEY_BOOT_FIRMWARE_ONLY, true)
                 putExtra(KEY_BOOT_FIRMWARE_CONSOLE, consoleType.ordinal)
+                if (startMultiplayerSession) putExtra(KEY_START_MULTIPLAYER_FIRMWARE, true)
             }
         }
     }
@@ -622,6 +628,18 @@ open class EmulatorActivity : AppCompatActivity() {
             }
         })
         emulatorRumbleManager = EmulatorRumbleManager(this, lifecycleScope, connectedControllerManager)
+        lifecycleScope.launch {
+            lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                viewModel.emulatorState.map { state ->
+                    val slot = (state as? EmulatorState.RunningRom)?.rom?.config?.gbaSlotConfig
+                    slot == RomGbaSlotConfig.MotionPakHomebrew || slot == RomGbaSlotConfig.MotionPakRetail
+                }.distinctUntilChanged().collectLatest { usesMotionPak ->
+                    if (usesMotionPak) {
+                        EmulatorMotionManager(this@EmulatorActivity).track(connectedControllerManager)
+                    }
+                }
+            }
+        }
         currentPresentationBackend = viewModel.getConfiguredVideoRenderer().toPresentationBackend()
         frameRenderCoordinator = createFrameRenderCoordinator(currentPresentationBackend)
         choreographerFrameRenderer = ChoreographerFrameRendererFactory.createFrameRenderer(frameRenderCoordinator)
@@ -1703,7 +1721,7 @@ open class EmulatorActivity : AppCompatActivity() {
             return
 
         lifecycleScope.launch {
-            if (viewModel.isRunningRomLaunch(launchArgs)) {
+            if (viewModel.matchesRunningLaunch(launchArgs)) {
                 setIntent(intent)
                 return@launch
             }

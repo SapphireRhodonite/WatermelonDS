@@ -29,7 +29,11 @@ import androidx.compose.material.Scaffold
 import androidx.compose.material.SnackbarHostState
 import androidx.compose.material.SnackbarResult
 import androidx.compose.material.Text
-import androidx.compose.material.TopAppBar
+import androidx.compose.material.TextField
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.outlined.CheckBox
@@ -68,6 +72,9 @@ fun CheatsScreen(
     val enabledCheatsTitle = stringResource(R.string.enabled_cheats)
     val navController = rememberNavController()
     val currentBackStackEntry by navController.currentBackStackEntryAsState()
+    val route = currentBackStackEntry?.destination?.route?.substringBefore("/")
+    val searching = route == CheatsNavigation.Search.serializer().descriptor.serialName
+    val query by viewModel.searchQuery.collectAsStateWithLifecycle()
     val showEnabledCheatsButton by remember(currentBackStackEntry) {
         derivedStateOf {
             val currentRoute = currentBackStackEntry?.destination?.route?.substringBefore("/")
@@ -90,7 +97,9 @@ fun CheatsScreen(
     val scaffoldState = rememberScaffoldState(snackbarHostState = snackbarHostState)
     val coroutineScope = rememberCoroutineScope()
     val navigateBack = {
-        if (navController.previousBackStackEntry == null) {
+        if (searching && query.isNotEmpty()) {
+            viewModel.clearSearchQuery()
+        } else if (navController.previousBackStackEntry == null) {
             // The first screen (the loading screen) is not considered as an entry. So, previousBackStackEntry will be null
             viewModel.commitCheatChanges()
         } else {
@@ -152,17 +161,44 @@ fun CheatsScreen(
                         )
                     }
                     androidx.compose.foundation.layout.Spacer(Modifier.width(6.dp))
-                    Text(
-                        text = appBarTitle ?: stringResource(R.string.cheats),
-                        color = colors.text,
-                        fontFamily = me.magnum.melonds.ui.theme.SpaceGrotesk,
-                        fontSize = 16.sp,
-                        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
+                    if (searching) {
+                        val focus = remember { FocusRequester() }
+                        TextField(
+                            value = query,
+                            onValueChange = viewModel::setSearchQuery,
+                            modifier = Modifier.weight(1f).focusRequester(focus),
+                            placeholder = { Text(stringResource(R.string.hint_search_cheats)) },
+                            singleLine = true,
+                            trailingIcon = {
+                                if (query.isNotEmpty()) {
+                                    IconButton(onClick = viewModel::clearSearchQuery) {
+                                        Icon(Icons.Filled.Close, stringResource(R.string.clear))
+                                    }
+                                }
+                            },
+                        )
+                        LaunchedEffect(Unit) { focus.requestFocus() }
+                    } else {
+                        Text(
+                            text = appBarTitle ?: stringResource(R.string.cheats),
+                            color = colors.text,
+                            fontFamily = me.magnum.melonds.ui.theme.SpaceGrotesk,
+                            fontSize = 16.sp,
+                            fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     if (showEnabledCheatsButton) {
+                        IconButton(onClick = {
+                            viewModel.clearSearchQuery()
+                            navController.navigate(CheatsNavigation.Search(route == CheatsNavigation.FolderCheats.serializer().descriptor.serialName))
+                        }) {
+                            Icon(Icons.Filled.Search, stringResource(R.string.hint_search_cheats), tint = colors.text2)
+                        }
+                    }
+                    if (showEnabledCheatsButton || searching) {
                         Box(
                             modifier = Modifier
                                 .size(38.dp)
@@ -247,6 +283,31 @@ fun CheatsScreen(
                             }
                         }
                         viewModel.deleteCheat(it)
+                    },
+                )
+            }
+            composable<CheatsNavigation.Search> { entry ->
+                val onlyCurrentFolder = entry.toRoute<CheatsNavigation.Search>().searchOnlyInCurrentFolder
+                val results = remember(viewModel, onlyCurrentFolder) {
+                    viewModel.getFilteredCheatsFlow(onlyCurrentFolder)
+                }
+                val matches by results.collectAsStateWithLifecycle(CheatsScreenUiState.Loading())
+                CheatSearchScreen(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = padding,
+                    searchResults = matches,
+                    query = query,
+                    onCheatClick = viewModel::toggleCheat,
+                    onUpdateCheat = viewModel::updateCheat,
+                    onDeleteCheatClick = { folder, cheat ->
+                        viewModel.deleteCheat(cheat, folder)
+                        coroutineScope.launch {
+                            val result = snackbarHostState.showSnackbar(
+                                message = resources.getString(R.string.cheat_deleted, cheat.name),
+                                actionLabel = resources.getString(R.string.undo),
+                            )
+                            if (result == SnackbarResult.ActionPerformed) viewModel.undoCheatDeletion(cheat)
+                        }
                     },
                 )
             }

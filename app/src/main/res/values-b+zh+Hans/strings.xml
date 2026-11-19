@@ -391,7 +391,7 @@
     <string name="enable_cheats">启用金手指</string>
     <string name="cheats_database">金手指数据库（XML 格式）</string>
     <string name="import_cheats">导入金手指</string>
-    <string name="import_cheats_summary">从数据库文件导入金手指代码以使其可用。目前仅支持 XML 数据库。之前导入的任何金手指都将被删除。</string>
+    <string name="import_cheats_summary">导入 XML 或 usrcheat.dat 数据库。导入成功后，将替换之前导入的金手指，并保留您自己创建的金手指。</string>
     <string name="rom_shortcut">ROM 快捷方式</string>
 
     <string name="firmware_nickname">昵称</string>
@@ -741,6 +741,8 @@
         <item>震动包</item>
         <item>内存扩展卡</item>
         <item>模拟输入</item>
+        <item>Motion Pak (Homebrew)</item>
+        <item>Motion Pak (Retail)</item>
     </string-array>
 
     <string-array name="console_type_options">
@@ -936,12 +938,12 @@
     <string name="system_ignore_display_cutout_in_layouts">在布局中忽略屏幕缺口</string>
     <string name="system_ignore_display_cutout_in_layouts_summary">允许模拟器布局使用刘海或摄像头挖孔区域。更改此设置后，请重启布局编辑器或模拟器。</string>
     <string name="video_vulkan_driver_category">Vulkan 驱动</string>
-    <string name="video_vulkan_driver_mode">Adreno Vulkan 驱动</string>
+    <string name="video_vulkan_driver_mode">图形驱动</string>
     <string name="video_vulkan_driver_import">导入自定义驱动</string>
     <string name="video_vulkan_driver_import_summary">安装驱动压缩包。更改将在下次启动游戏时生效。</string>
     <string name="video_vulkan_driver_remove">移除自定义驱动</string>
     <string name="video_vulkan_driver_remove_summary">删除已安装的自定义驱动。</string>
-    <string name="video_vulkan_driver_unsupported">自定义驱动仅适用于配备 Adreno GPU、运行 Android 9 及以上系统的设备，并且需要 GitHub arm64 版本。</string>
+    <string name="video_vulkan_driver_unsupported">自定义驱动需要 GitHub arm64 版本和 Android 9 或更高版本。</string>
     <string name="video_vulkan_driver_no_custom">选择此选项前，请先导入自定义驱动。</string>
     <string name="video_vulkan_driver_active_system">正在使用 Android 系统 Vulkan 驱动。</string>
     <string name="video_vulkan_driver_active_custom">Vulkan 启动时将使用 %1$s。</string>
@@ -1167,4 +1169,7 @@
     <string name="freedreno_restart">重启 WatermelonDS 以保存并应用此更改。</string>
     <string name="freedreno_restart_button">重启</string>
     <string name="freedreno_save_failed">无法保存设置。点击重启以重试。</string>
+    <string name="video_vulkan_driver_import_other_gpu">请安装适用于当前 GPU 的 Vulkan 驱动 ZIP。如果无法打开驱动，模拟器将使用系统驱动。</string>
+    <string name="hint_search_cheats">搜索金手指</string>
+    <string name="no_cheats_found_from_search">没有匹配的金手指</string>
 </resources>

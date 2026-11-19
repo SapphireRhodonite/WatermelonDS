@@ -276,7 +276,7 @@
     <string name="enable_cheats">Mengaktifkan curang</string>
     <string name="cheats_database">Basis data curang (format XML)</string>
     <string name="import_cheats">Mengimpor curang</string>
-    <string name="import_cheats_summary">Mengimpor curang dari berkas basis data untuk membuatnya tersedia. Hanya basis data XML yang didukung untuk sekarang. Curang apa pun yang terpasang sebelumnya akan dihapus.</string>
+    <string name="import_cheats_summary">Impor basis data XML atau usrcheat.dat. Jika berhasil, impor ini menggantikan kode cheat yang diimpor sebelumnya dan mempertahankan kode buatan Anda.</string>
     <string name="rom_shortcut">Pintasan ROM</string>
 
     <string name="firmware_nickname">Nama panggilan</string>
@@ -505,6 +505,9 @@
         <item>ROM GBA</item>
         <item>Pak Getaran</item>
         <item>Ekspansi memori</item>
+        <item>Input analog</item>
+        <item>Motion Pak (Homebrew)</item>
+        <item>Motion Pak (Retail)</item>
     </string-array>
 
     <string-array name="console_type_options">
@@ -624,4 +627,9 @@
         <item>Pas bawah</item>
         <item>Pas kanan</item>
     </string-array>
+    <string name="video_vulkan_driver_mode">Driver grafis</string>
+    <string name="video_vulkan_driver_unsupported">Driver kustom memerlukan versi GitHub arm64 dan Android 9 atau lebih baru.</string>
+    <string name="video_vulkan_driver_import_other_gpu">Pasang ZIP driver Vulkan yang sesuai dengan GPU Anda. Jika driver tidak dapat dibuka, emulator akan menggunakan driver sistem.</string>
+    <string name="hint_search_cheats">Cari kode cheat</string>
+    <string name="no_cheats_found_from_search">Tidak ada kode cheat yang cocok</string>
 </resources>

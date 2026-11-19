@@ -377,12 +377,12 @@
     <string name="video_vulkan_drs">Dynamic internal resolution</string>
     <string name="video_vulkan_drs_summary">The game targets the selected internal resolution, but under heavy load it renders at a lower internal resolution to keep a stable 60 fps. While enabled, Frameskip is off.</string>
     <string name="frameskip_mode_disabled_by_drs">DRS is active; to use Frameskip, disable dynamic internal resolution in Video settings.</string>
-    <string name="video_vulkan_driver_mode">Adreno Vulkan driver</string>
+    <string name="video_vulkan_driver_mode">Graphics driver</string>
     <string name="video_vulkan_driver_import">Import custom driver</string>
     <string name="video_vulkan_driver_import_summary">Install a driver ZIP. Changes apply the next time a game starts.</string>
     <string name="video_vulkan_driver_remove">Remove custom driver</string>
     <string name="video_vulkan_driver_remove_summary">Delete installed custom drivers.</string>
-    <string name="video_vulkan_driver_unsupported">Custom drivers require an Adreno GPU, the GitHub arm64 build, and Android 9 or newer.</string>
+    <string name="video_vulkan_driver_unsupported">Custom drivers require the GitHub arm64 build and Android 9 or newer.</string>
     <string name="video_vulkan_driver_no_custom">Import a custom driver before selecting this option.</string>
     <string name="video_vulkan_driver_active_system">Using Android system Vulkan driver.</string>
     <string name="video_vulkan_driver_active_custom">Using %1$s when Vulkan starts.</string>
@@ -510,7 +510,7 @@
     <string name="enable_cheats">Enable cheats</string>
     <string name="cheats_database">Cheats database (XML format)</string>
     <string name="import_cheats">Import cheats</string>
-    <string name="import_cheats_summary">Import cheats from database files to make them available. Only XML databases are supported for now. Any previously imported cheat will be deleted.</string>
+    <string name="import_cheats_summary">Import XML or usrcheat.dat databases. A successful import replaces previously imported cheats and keeps your custom cheats.</string>
     <string name="rom_shortcut">ROM shortcut</string>
 
     <string name="firmware_nickname">Nickname</string>
@@ -955,6 +955,8 @@
         <item>Rumble Pak</item>
         <item>Memory expansion</item>
         <item>Analog Input</item>
+        <item>Motion Pak (Homebrew)</item>
+        <item>Motion Pak (Retail)</item>
     </string-array>
 
     <string-array name="console_type_options">
@@ -1200,4 +1202,7 @@
     <string name="dsi_profile_make_default">Set as default</string>
     <string name="dsi_profile_missing">Profile unavailable</string>
     <string name="dsi_profile_remove_description">Remove this profile from settings? Its files will remain. Games assigned to it will need another profile before they can start.</string>
+    <string name="video_vulkan_driver_import_other_gpu">Install a Vulkan driver ZIP built for your GPU. If the driver cannot be opened, the emulator uses the system driver.</string>
+    <string name="hint_search_cheats">Search cheats</string>
+    <string name="no_cheats_found_from_search">No matching cheats</string>
 </resources>

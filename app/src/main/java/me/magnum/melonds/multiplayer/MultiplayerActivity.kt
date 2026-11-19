@@ -46,7 +46,7 @@ class MultiplayerActivity : AppCompatActivity() {
             }
             override fun onValidationAborted() {}
             override fun onFirmwareValidated(consoleType: ConsoleType, dsiProfile: DSiProfile?) {
-                startActivity(EmulatorActivity.getFirmwareEmulatorActivityIntent(this@MultiplayerActivity, consoleType))
+                startActivity(EmulatorActivity.getFirmwareEmulatorActivityIntent(this@MultiplayerActivity, consoleType, startMultiplayerSession = true))
             }
         })
         val preferences = getSharedPreferences("watermelon_multiplayer", Context.MODE_PRIVATE)

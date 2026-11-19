@@ -3,6 +3,7 @@ package me.magnum.melonds.impl
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
+import me.magnum.melonds.domain.model.VulkanDriverInfo
 import me.magnum.melonds.domain.model.VulkanDriverMode
 import me.magnum.melonds.domain.repositories.SettingsRepository
 import org.json.JSONObject
@@ -32,7 +33,7 @@ class AdrenoVulkanDriverManager(
     }
 
     val isSupported: Boolean
-        get() = AdrenoVulkanDriverSupport.isSupported(context)
+        get() = AdrenoVulkanDriverSupport.supportsCustomDrivers(context)
 
     fun importDriver(uri: Uri): ImportResult {
         if (!isSupported) {
@@ -47,7 +48,7 @@ class AdrenoVulkanDriverManager(
         }
 
         val driverId = UUID.randomUUID().toString()
-        val importRoot = File(context.filesDir, "adreno-drivers")
+        val importRoot = File(context.filesDir, "adreno-drivers").canonicalFile
         val pendingRoot = File(importRoot, "pending-$driverId")
         val installedRoot = File(importRoot, "driver-$driverId")
 
@@ -55,26 +56,20 @@ class AdrenoVulkanDriverManager(
             pendingRoot.mkdirs()
             extractZip(uri, pendingRoot)
             val metadata = readDriverMetadata(pendingRoot)
-            val driverFile = selectDriverFile(pendingRoot, metadata)
+            val driverFile = selectDriverFile(pendingRoot, metadata.libraryName, AdrenoVulkanDriverSupport.supportsFreedreno(context))
             val driverDir = driverFile.parentFile ?: throw ImportException(ImportException.Reason.NoDriver)
+            val installedDriverDir = installedRoot.resolve(driverDir.relativeTo(pendingRoot))
             val importedDisplayName = metadata.name
                 ?.takeIf { it.isNotBlank() }
                 ?: displayName.removeSuffix(".zip")
 
-            installedRoot.deleteRecursively()
             if (!pendingRoot.renameTo(installedRoot)) {
                 throw ImportException(ImportException.Reason.InvalidZip)
             }
 
-            val driverDirRelativePath = driverDir.toRelativeString(pendingRoot)
-            val currentDriverDir = if (driverDirRelativePath == ".") {
-                installedRoot
-            } else {
-                File(installedRoot, driverDirRelativePath)
-            }
             settingsRepository.setCustomVulkanDriver(
                 id = driverId,
-                driverDir = currentDriverDir.absolutePath,
+                driverDir = installedDriverDir.absolutePath,
                 driverName = driverFile.name,
                 displayName = importedDisplayName,
             )
@@ -90,11 +85,14 @@ class AdrenoVulkanDriverManager(
     }
 
     fun removeDriver(id: String) {
-        settingsRepository.getInstalledVulkanDrivers()
-            .firstOrNull { it.id == id }
-            ?.driverDir
-            ?.let { File(it).parentFile }
-            ?.deleteRecursively()
+        val driver = settingsRepository.getInstalledVulkanDrivers().firstOrNull { it.id == id } ?: return
+        val importRoot = File(context.filesDir, "adreno-drivers")
+        val packageRoot = packageDirectory(importRoot, id)
+        if (packageRoot != null) {
+            packageRoot.deleteRecursively()
+        } else if (id == "legacy") {
+            resolveInstalledLibrary(importRoot, driver)?.takeIf { it.canonicalFile.startsWith(importRoot.canonicalFile) }?.delete()
+        }
         settingsRepository.removeCustomVulkanDriver(id)
     }
 
@@ -150,40 +148,60 @@ class AdrenoVulkanDriverManager(
         }.getOrDefault(DriverMetadata(name = null, libraryName = null))
     }
 
-    private fun selectDriverFile(root: File, metadata: DriverMetadata): File {
-        val soFiles = root.walkTopDown()
-            .filter { it.isFile && it.extension.equals("so", ignoreCase = true) }
-            .toList()
+    companion object {
+        private fun packageDirectory(root: File, id: String): File? =
+            runCatching { UUID.fromString(id) }.getOrNull()?.let { File(root, "driver-$it") }
 
-        metadata.libraryName?.let { libraryName ->
-            val metadataDriver = File(root, libraryName).canonicalFile
-            val rootCanonical = root.canonicalFile
-            if (!metadataDriver.path.startsWith(rootCanonical.path + File.separator)) {
-                throw ImportException(ImportException.Reason.InvalidZip)
+        internal fun resolveInstalledLibrary(root: File, driver: VulkanDriverInfo): File? {
+            val savedDir = File(driver.driverDir)
+            if (driver.id == "legacy") {
+                return File(savedDir, driver.driverName).takeIf { it.isFile }
             }
-            if (metadataDriver.isFile && metadataDriver.extension.equals("so", ignoreCase = true)) {
-                return metadataDriver
-            }
+            val installedRoot = packageDirectory(root, driver.id) ?: return null
+            val savedRoot = generateSequence(savedDir) { it.parentFile }.firstOrNull {
+                it.name == installedRoot.name || it.name == "pending-${driver.id}"
+            } ?: return null
+            val library = installedRoot.resolve(savedDir.relativeTo(savedRoot)).resolve(driver.driverName)
+            return library.takeIf { it.isFile && it.canonicalFile.startsWith(installedRoot.canonicalFile) }
         }
 
-        listOf("libvulkan_freedreno.so", "vulkan.adreno.so").forEach { preferredName ->
-            val matches = soFiles.filter { it.name.equals(preferredName, ignoreCase = true) }
-            if (matches.size == 1) {
-                return matches.first()
-            }
-            if (matches.size > 1) {
-                throw ImportException(ImportException.Reason.AmbiguousDriver)
-            }
-        }
+        internal fun selectDriverFile(root: File, libraryName: String?, preferAdreno: Boolean): File {
+            val soFiles = root.walkTopDown()
+                .filter { it.isFile && it.extension.equals("so", ignoreCase = true) }
+                .toList()
 
-        val genericMatches = soFiles.filter { file ->
-            file.name.startsWith("libvulkan", ignoreCase = true) ||
-                (file.name.startsWith("vulkan.", ignoreCase = true) && file.name.endsWith(".so", ignoreCase = true))
-        }
-        return when (genericMatches.size) {
-            1 -> genericMatches.first()
-            0 -> throw ImportException(ImportException.Reason.NoDriver)
-            else -> throw ImportException(ImportException.Reason.AmbiguousDriver)
+            libraryName?.let { requestedName ->
+                val metadataDriver = File(root, requestedName).canonicalFile
+                val rootCanonical = root.canonicalFile
+                if (!metadataDriver.path.startsWith(rootCanonical.path + File.separator)) {
+                    throw ImportException(ImportException.Reason.InvalidZip)
+                }
+                if (metadataDriver.isFile && metadataDriver.extension.equals("so", ignoreCase = true)) {
+                    return metadataDriver
+                }
+            }
+
+            if (preferAdreno) {
+                listOf("libvulkan_freedreno.so", "vulkan.adreno.so").forEach { preferredName ->
+                    val matches = soFiles.filter { it.name.equals(preferredName, ignoreCase = true) }
+                    if (matches.size == 1) {
+                        return matches.first()
+                    }
+                    if (matches.size > 1) {
+                        throw ImportException(ImportException.Reason.AmbiguousDriver)
+                    }
+                }
+            }
+
+            val genericMatches = soFiles.filter { file ->
+                file.name.startsWith("libvulkan", ignoreCase = true) ||
+                    (file.name.startsWith("vulkan.", ignoreCase = true) && file.name.endsWith(".so", ignoreCase = true))
+            }
+            return when (genericMatches.size) {
+                1 -> genericMatches.first()
+                0 -> throw ImportException(ImportException.Reason.NoDriver)
+                else -> throw ImportException(ImportException.Reason.AmbiguousDriver)
+            }
         }
     }
 }

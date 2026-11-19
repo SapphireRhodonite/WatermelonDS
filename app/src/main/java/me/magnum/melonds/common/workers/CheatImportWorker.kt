@@ -19,6 +19,8 @@ import kotlinx.coroutines.CancellationException
 import me.magnum.melonds.MelonDSApplication
 import me.magnum.melonds.R
 import me.magnum.melonds.common.cheats.ProgressTrackerInputStream
+import me.magnum.melonds.common.cheats.UsrCheatDatabaseParser
+import me.magnum.melonds.common.cheats.XmlCheatDatabaseParser
 import me.magnum.melonds.domain.repositories.CheatsRepository
 
 @HiltWorker
@@ -56,14 +58,16 @@ class CheatImportWorker @AssistedInject constructor(
                 }
             }
 
-            if (!databaseDocument.name?.substringAfterLast('.').equals("xml", ignoreCase = true)) {
-                return Result.failure()
+            val parser = when (databaseDocument.name?.substringAfterLast('.')?.lowercase()) {
+                "xml" -> XmlCheatDatabaseParser()
+                "dat" -> UsrCheatDatabaseParser()
+                else -> return Result.failure()
             }
 
             val input = applicationContext.contentResolver.openInputStream(uri) ?: return Result.failure()
             input.use {
-                val stream = ProgressTrackerInputStream(it)
-                cheatsRepository.replaceImportedCheats(stream) { gameName ->
+                val stream = ProgressTrackerInputStream(it.buffered())
+                cheatsRepository.replaceImportedCheats(stream, parser) { gameName ->
                     val readProgress = if (totalFileSize != null && totalFileSize > 0) {
                         (stream.totalReadBytes.toDouble() / totalFileSize * 100).toInt()
                     } else {

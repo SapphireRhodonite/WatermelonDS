@@ -13,7 +13,7 @@ object FreedrenoSettings {
     fun isValid(value: String): Boolean = value.length <= 2048 && value.all { it in ' '..'~' }
 
     fun applyAtStartup(context: Context) {
-        if (!AdrenoVulkanDriverSupport.isSupported(context)) return
+        if (!AdrenoVulkanDriverSupport.supportsFreedreno(context)) return
         val preferences = PreferenceManager.getDefaultSharedPreferences(context)
         for (variable in variables) {
             val value = (preferences.all[preferenceKey(variable)] as? String).orEmpty().trim()

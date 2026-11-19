@@ -14,17 +14,16 @@ sealed class LaunchArgs {
     data class RomObject(val rom: Rom) : LaunchArgs()
     data class RomUri(val uri: Uri) : LaunchArgs()
     data class RomPath(val path: String) : LaunchArgs()
-    data class Firmware(val consoleType: ConsoleType) : LaunchArgs()
+    data class Firmware(val consoleType: ConsoleType, val startMultiplayerSession: Boolean = false) : LaunchArgs() {
+        fun resumes(runningConsole: ConsoleType): Boolean = !startMultiplayerSession && consoleType == runningConsole
+    }
 
     companion object {
         fun fromSavedStateHandle(savedStateHandle: SavedStateHandle): LaunchArgs? {
             return if (savedStateHandle.get<Boolean>(EmulatorActivity.KEY_BOOT_FIRMWARE_ONLY) == true) {
                 val consoleTypeParameter = savedStateHandle.get<Int>(EmulatorActivity.KEY_BOOT_FIRMWARE_CONSOLE)
-                if (consoleTypeParameter != null) {
-                    val firmwareConsoleType = ConsoleType.entries[consoleTypeParameter]
-                    Firmware(firmwareConsoleType)
-                } else {
-                    null
+                consoleTypeParameter?.let(ConsoleType.entries::getOrNull)?.let {
+                    Firmware(it, savedStateHandle.get<Boolean>(EmulatorActivity.KEY_START_MULTIPLAYER_FIRMWARE) == true)
                 }
             } else {
                 val romParcelable = savedStateHandle.get<RomParcelable>(EmulatorActivity.KEY_ROM)
@@ -57,11 +56,8 @@ sealed class LaunchArgs {
 
             return if (bootFirmwareOnly) {
                 val consoleTypeParameter = extras.getInt(EmulatorActivity.KEY_BOOT_FIRMWARE_CONSOLE, -1)
-                if (consoleTypeParameter == -1) {
-                    null
-                } else {
-                    val firmwareConsoleType = ConsoleType.entries[consoleTypeParameter]
-                    Firmware(firmwareConsoleType)
+                ConsoleType.entries.getOrNull(consoleTypeParameter)?.let {
+                    Firmware(it, extras.getBoolean(EmulatorActivity.KEY_START_MULTIPLAYER_FIRMWARE, false))
                 }
             } else {
                 val romParcelable = extras?.parcelable<RomParcelable>(EmulatorActivity.KEY_ROM)

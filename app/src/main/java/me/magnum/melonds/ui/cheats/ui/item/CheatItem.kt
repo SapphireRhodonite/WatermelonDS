@@ -38,6 +38,8 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -57,6 +59,8 @@ fun CheatItem(
     onClick: () -> Unit,
     onEditClick: () -> Unit,
     onDeleteClick: () -> Unit,
+    folderName: String? = null,
+    highlightQuery: String = "",
 ) {
     val colors = watermelon
     val hasDescription = cheat.description?.isNotBlank() == true
@@ -90,8 +94,18 @@ fun CheatItem(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
+            if (folderName != null) {
+                Text(
+                    text = highlightedCheatText(folderName, highlightQuery),
+                    color = colors.text3,
+                    fontFamily = WatermelonMono,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
-                text = cheat.name,
+                text = highlightedCheatText(cheat.name, highlightQuery),
                 color = colors.text,
                 fontSize = 13.5.sp,
                 fontWeight = FontWeight.Medium,
@@ -161,6 +175,17 @@ fun CheatItem(
             checked = cheat.enabled,
             onCheckedChange = { onClick() },
         )
+    }
+}
+
+private fun highlightedCheatText(text: String, query: String) = buildAnnotatedString {
+    append(text)
+    if (query.isNotBlank()) {
+        var match = text.indexOf(query, ignoreCase = true)
+        while (match >= 0) {
+            addStyle(SpanStyle(fontWeight = FontWeight.Bold), match, match + query.length)
+            match = text.indexOf(query, match + query.length, ignoreCase = true)
+        }
     }
 }
 

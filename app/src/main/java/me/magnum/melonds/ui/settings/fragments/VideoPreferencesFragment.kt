@@ -42,6 +42,7 @@ import me.magnum.melonds.ui.settings.preferences.InGameLockedSwitchPreference
 import me.magnum.melonds.ui.settings.preferences.InGameLockedListPreference
 import me.magnum.melonds.ui.settings.preferences.StoragePickerPreference
 import me.magnum.melonds.extensions.addOnPreferenceChangeListener
+import me.magnum.melonds.impl.AdrenoVulkanDriverSupport
 import me.magnum.melonds.impl.AdrenoVulkanDriverManager
 import me.magnum.melonds.utils.enumValueOfIgnoreCase
 import androidx.appcompat.app.AlertDialog
@@ -379,7 +380,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
 
     private fun setupFreedrenoSettingsSubScreen() {
         preferenceScreen.isEnabled =
-            me.magnum.melonds.impl.AdrenoVulkanDriverSupport.isSupported(requireContext()) &&
+            AdrenoVulkanDriverSupport.supportsFreedreno(requireContext()) &&
             !requireActivity().intent.getBooleanExtra(SettingsActivity.KEY_IN_GAME, false)
         for (variable in me.magnum.melonds.impl.FreedrenoSettings.variables) {
             findPreference<EditTextPreference>(
@@ -412,8 +413,14 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         launchedInGame: Boolean,
     ) {
         modePreference.isPersistent = false
-        modePreference.setOnPreferenceClickListener {
-            showVulkanDriverSelectionDialog(modePreference, removePreference)
+        modePreference.setOnPreferenceChangeListener { _, value ->
+            val driverId = value as String
+            if (driverId == VULKAN_SYSTEM_DRIVER_VALUE) {
+                settingsRepository.setVulkanDriverMode(VulkanDriverMode.SYSTEM)
+            } else {
+                settingsRepository.setSelectedVulkanDriver(driverId)
+            }
+            updateVulkanDriverPreferenceSummaries(modePreference, removePreference)
             true
         }
 
@@ -462,35 +469,13 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             return
         }
 
+        val supportsFreedreno = AdrenoVulkanDriverSupport.supportsFreedreno(requireContext())
+        findPreference<Preference>(FREEDRENO_SETTINGS_KEY)?.isVisible = supportsFreedreno
+        importPreference.setSummary(
+            if (supportsFreedreno) R.string.video_vulkan_driver_import_summary else R.string.video_vulkan_driver_import_other_gpu
+        )
         category.summary = null
         updateVulkanDriverPreferenceSummaries(modePreference, removePreference)
-    }
-
-    private fun showVulkanDriverSelectionDialog(
-        modePreference: ListPreference,
-        removePreference: Preference,
-    ) {
-        val installedDrivers = settingsRepository.getInstalledVulkanDrivers()
-        val values = listOf(VULKAN_SYSTEM_DRIVER_VALUE) + installedDrivers.map { it.id }
-        val entries = listOf(getString(R.string.video_vulkan_driver_mode_system)) +
-            installedDrivers.map { it.displayName }
-        val selectedValue = modePreference.value ?: VULKAN_SYSTEM_DRIVER_VALUE
-        val checkedIndex = values.indexOf(selectedValue).takeIf { it >= 0 } ?: 0
-
-        AlertDialog.Builder(requireContext())
-            .setTitle(R.string.video_vulkan_driver_mode)
-            .setSingleChoiceItems(entries.toTypedArray(), checkedIndex) { dialog, which ->
-                val value = values[which]
-                if (value == VULKAN_SYSTEM_DRIVER_VALUE) {
-                    settingsRepository.setVulkanDriverMode(VulkanDriverMode.SYSTEM)
-                } else {
-                    settingsRepository.setSelectedVulkanDriver(value)
-                }
-                updateVulkanDriverPreferenceSummaries(modePreference, removePreference)
-                dialog.dismiss()
-            }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
     }
 
     private fun handleVulkanDriverImport(uri: Uri) {

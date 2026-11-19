@@ -276,7 +276,7 @@
     <string name="enable_cheats">Загружать чит-коды</string>
     <string name="cheats_database">База чит-кодов (в XML)</string>
     <string name="import_cheats">Импорт чит-кодов</string>
-    <string name="import_cheats_summary">Импортируйте файл с базой в формате XML для загрузки чит-кодов в играх. Все ранее добавленные чит-коды будут удалены.</string>
+    <string name="import_cheats_summary">Импортируйте базы чит-кодов в формате XML или usrcheat.dat. При успешном импорте ранее импортированные коды заменяются, а созданные вами сохраняются.</string>
     <string name="rom_shortcut">Ярлык для игры</string>
 
     <string name="firmware_nickname">Никнейм</string>
@@ -509,6 +509,9 @@
         <item>Ром GBA</item>
         <item>Rumble Pak</item>
         <item>Расширение памяти</item>
+        <item>Аналоговый ввод</item>
+        <item>Motion Pak (Homebrew)</item>
+        <item>Motion Pak (Retail)</item>
     </string-array>
     
     <string-array name="console_type_options">
@@ -628,4 +631,9 @@
         <item>Внизу</item>
         <item>Справа</item>
     </string-array>
+    <string name="video_vulkan_driver_mode">Графический драйвер</string>
+    <string name="video_vulkan_driver_unsupported">Для пользовательских драйверов нужны сборка GitHub arm64 и Android 9 или новее.</string>
+    <string name="video_vulkan_driver_import_other_gpu">Установите ZIP с драйвером Vulkan для вашего графического процессора. Если драйвер не удастся открыть, эмулятор использует системный драйвер.</string>
+    <string name="hint_search_cheats">Найти чит-коды</string>
+    <string name="no_cheats_found_from_search">Подходящих чит-кодов нет</string>
 </resources>

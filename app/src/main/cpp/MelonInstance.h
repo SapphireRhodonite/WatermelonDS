@@ -48,6 +48,7 @@ public:
     bool loadGbaRom(std::string romPath, std::string sramPath);
     void loadRumblePak();
     void loadGbaMemoryExpansion();
+    void loadMotionPak(bool retail);
     void loadGbaAnalogInput();
     void loadGbaRumblePak();
     bool bootFirmware();
@@ -120,6 +121,8 @@ public:
     void abortExactLiveGuide(std::uint32_t reason);
     void pressKey(u32 key);
     void releaseKey(u32 key);
+    void updateMotionData(float ax, float ay, float az, float rx, float ry, float rz);
+    float getMotionData(Platform::MotionQueryType type) const;
     void setSlot2AnalogInput(float x, float y);
     int readAudioOutputAdaptivo(
         s16* buffer, int length,
@@ -425,6 +428,7 @@ private:
     std::unique_ptr<SaveManager> gbaSave;
     std::unique_ptr<SaveManager> firmwareSave;
     u32 inputMask;
+    std::array<std::atomic<float>, Platform::MotionRotationZ + 1> motionData{0.0f, 0.0f, 9.80665f, 0.0f, 0.0f, 0.0f};
     std::atomic<float> slot2AnalogX = 0.0f;
     std::atomic<float> slot2AnalogY = 0.0f;
 

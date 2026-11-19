@@ -161,6 +161,7 @@ namespace MelonDSAndroid {
     extern void abortExactLiveGuide(std::uint32_t reason);
     extern void pressKey(u32 key);
     extern void releaseKey(u32 key);
+    extern void updateMotionData(float ax, float ay, float az, float rx, float ry, float rz);
     extern void setSlot2AnalogInput(float x, float y);
     extern void start();
 

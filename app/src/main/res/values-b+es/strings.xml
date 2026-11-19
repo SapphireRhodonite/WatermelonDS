@@ -248,12 +248,12 @@
     <string name="microphone_source">Fuente de micrófono</string>
     <string name="controller_layout">Disposición del controlador</string>
     <string name="video_vulkan_driver_category">Driver Vulkan</string>
-    <string name="video_vulkan_driver_mode">Driver Vulkan Adreno</string>
+    <string name="video_vulkan_driver_mode">Controlador gráfico</string>
     <string name="video_vulkan_driver_import">Importar driver personalizado</string>
     <string name="video_vulkan_driver_import_summary">Instala un ZIP de driver. Los cambios aplican al iniciar el siguiente juego.</string>
     <string name="video_vulkan_driver_remove">Eliminar driver personalizado</string>
     <string name="video_vulkan_driver_remove_summary">Elimina drivers personalizados instalados.</string>
-    <string name="video_vulkan_driver_unsupported">Los drivers Adreno personalizados solo están disponibles en el build GitHub arm64 con Android 9 o superior.</string>
+    <string name="video_vulkan_driver_unsupported">Los drivers personalizados requieren la versión GitHub arm64 y Android 9 o posterior.</string>
     <string name="video_vulkan_driver_no_custom">Importa un driver personalizado antes de seleccionar esta opción.</string>
     <string name="video_vulkan_driver_active_system">Usando el driver Vulkan del sistema Android.</string>
     <string name="video_vulkan_driver_active_custom">Usando %1$s al iniciar Vulkan.</string>
@@ -300,7 +300,7 @@
     <string name="enable_cheats">Habilitar trucos</string>
     <string name="cheats_database">Base de datos de trucos (formato XML)</string>
     <string name="import_cheats">Importar trucos</string>
-    <string name="import_cheats_summary">Importar trucos desde archivos de base de datos para tenerlos disponibles. Por ahora, solo se admiten bases de datos en formato XML. Cualquier truco previamente importado se eliminará</string>
+    <string name="import_cheats_summary">Importa bases XML o usrcheat.dat. Una importación correcta reemplaza los trucos importados y conserva los que creaste.</string>
     <string name="rom_shortcut">Acceso directo de la ROM</string>
     
     <string name="firmware_nickname">Apodo</string>
@@ -689,4 +689,7 @@
     <string name="freedreno_restart">Reinicia WatermelonDS para guardar y aplicar este cambio.</string>
     <string name="freedreno_restart_button">Reiniciar</string>
     <string name="freedreno_save_failed">No se pudo guardar el ajuste. Pulsa Reiniciar para volver a intentarlo.</string>
+    <string name="video_vulkan_driver_import_other_gpu">Instala un ZIP de un driver Vulkan compatible con tu GPU. Si el driver no se puede abrir, el emulador usa el del sistema.</string>
+    <string name="hint_search_cheats">Buscar trucos</string>
+    <string name="no_cheats_found_from_search">Ningún truco coincide con la búsqueda</string>
 </resources>

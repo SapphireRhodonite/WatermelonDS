@@ -153,6 +153,8 @@ class RomDetailsViewModel @Inject constructor(
                     RomGbaSlotConfigUiModel.Type.RumblePak -> RomGbaSlotConfig.RumblePak
                     RomGbaSlotConfigUiModel.Type.MemoryExpansion -> RomGbaSlotConfig.MemoryExpansion
                     RomGbaSlotConfigUiModel.Type.AnalogInput -> RomGbaSlotConfig.AnalogInput
+                    RomGbaSlotConfigUiModel.Type.MotionPakHomebrew -> RomGbaSlotConfig.MotionPakHomebrew
+                    RomGbaSlotConfigUiModel.Type.MotionPakRetail -> RomGbaSlotConfig.MotionPakRetail
                 }
                 it.copy(gbaSlotConfig = newGbaSlotConfig)
             }

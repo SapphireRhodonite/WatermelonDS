@@ -192,7 +192,7 @@
     <string name="enable_cheats">Ativar cheats (trapaças)</string>
     <string name="cheats_database">Banco de dados de cheats (trapaças) (formato XML)</string>
     <string name="import_cheats">Importar cheats (trapaças)</string>
-    <string name="import_cheats_summary">Importe cheats (trapaças) de arquivos de bancos de dados para disponibilizá-los. Apenas bancos de dados XML são suportados por enquanto. Qualquer cheat (trapaça) previamente importado será deletado.</string>
+    <string name="import_cheats_summary">Importe bancos de dados XML ou usrcheat.dat. Se a importação for concluída, os códigos importados anteriormente serão substituídos e os seus códigos personalizados serão mantidos.</string>
     <string name="rom_shortcut">Atalho da ROM</string>
 
     <string name="firmware_nickname">Apelido</string>
@@ -389,4 +389,9 @@
         <item>Ajustar em baixo</item>
         <item>Ajustar à direita</item>
     </string-array>
+    <string name="video_vulkan_driver_mode">Driver gráfico</string>
+    <string name="video_vulkan_driver_unsupported">Drivers personalizados exigem a versão GitHub arm64 e Android 9 ou posterior.</string>
+    <string name="video_vulkan_driver_import_other_gpu">Instale um ZIP com um driver Vulkan compatível com sua GPU. Se o driver não puder ser aberto, o emulador usará o driver do sistema.</string>
+    <string name="hint_search_cheats">Pesquisar códigos de trapaça</string>
+    <string name="no_cheats_found_from_search">Nenhum código correspondente</string>
 </resources>

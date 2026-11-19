@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapNotNull
 import me.magnum.melonds.common.cheats.CheatDatabaseParserListener
+import me.magnum.melonds.common.cheats.CheatDatabaseParser
 import me.magnum.melonds.common.cheats.ProgressTrackerInputStream
-import me.magnum.melonds.common.cheats.XmlCheatDatabaseParser
 import me.magnum.melonds.common.workers.CheatImportWorker
 import me.magnum.melonds.database.MelonDatabase
 import me.magnum.melonds.database.entities.CheatDatabaseEntity
@@ -146,11 +146,11 @@ class RoomCheatsRepository(
         settingsBackupManager.requestMirrorWrite()
     }
 
-    override suspend fun replaceImportedCheats(stream: ProgressTrackerInputStream, onGameStart: (String) -> Unit) {
+    override suspend fun replaceImportedCheats(stream: ProgressTrackerInputStream, parser: CheatDatabaseParser, onGameStart: (String) -> Unit) {
         database.withTransaction {
             val transactionContext = currentCoroutineContext()
             var databaseStarted = false
-            XmlCheatDatabaseParser().parseCheatDatabase(stream, object : CheatDatabaseParserListener {
+            parser.parseCheatDatabase(stream, object : CheatDatabaseParserListener {
                 override fun onDatabaseParseStart(databaseName: String): CheatDatabase = runBlocking(transactionContext) {
                     // Don't allow the custom cheat database to be deleted
                     require(databaseName.isNotBlank() && databaseName != CheatDatabaseEntity.CUSTOM_CHEATS_DATABASE_NAME)

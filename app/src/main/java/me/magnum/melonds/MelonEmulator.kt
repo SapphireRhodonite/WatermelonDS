@@ -50,6 +50,8 @@ object MelonEmulator {
         RUMBLE_PAK,
         MEMORY_EXPANSION,
         ANALOG_INPUT,
+        MOTION_PAK_HOMEBREW,
+        MOTION_PAK_RETAIL,
     }
 
     enum class VulkanPresentationResult(val nativeValue: Int) {
@@ -303,6 +305,7 @@ object MelonEmulator {
 
     private external fun onKeyRelease(key: Int)
 
+    external fun updateMotionData(ax: Float, ay: Float, az: Float, rx: Float, ry: Float, rz: Float)
     external fun setSlot2AnalogInput(x: Float, y: Float)
 
     external fun takeScreenshot(): IntArray?

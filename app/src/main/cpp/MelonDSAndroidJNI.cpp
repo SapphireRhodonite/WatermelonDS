@@ -61,6 +61,8 @@ enum GbaSlotType {
     RUMBLE_PAK = 2,
     MEMORY_EXPANSION = 3,
     ANALOG_INPUT = 4,
+    MOTION_PAK_HOMEBREW = 5,
+    MOTION_PAK_RETAIL = 6,
 };
 
 void* emulate(void*);
@@ -2967,6 +2969,12 @@ Java_me_magnum_melonds_MelonEmulator_takeScreenshot(JNIEnv* env, jobject thiz)
 }
 
 JNIEXPORT void JNICALL
+Java_me_magnum_melonds_MelonEmulator_updateMotionData(JNIEnv*, jobject, jfloat ax, jfloat ay, jfloat az, jfloat rx, jfloat ry, jfloat rz)
+{
+    MelonDSAndroid::updateMotionData(ax, ay, az, rx, ry, rz);
+}
+
+JNIEXPORT void JNICALL
 Java_me_magnum_melonds_MelonEmulator_setSlot2AnalogInput(JNIEnv* env, jobject thiz, jfloat x, jfloat y)
 {
     MelonDSAndroid::setSlot2AnalogInput(x, y);
@@ -3095,6 +3103,12 @@ MelonDSAndroid::RomGbaSlotConfig* buildGbaSlotConfig(GbaSlotType slotType, const
     else if (slotType == GbaSlotType::MEMORY_EXPANSION)
     {
         return (MelonDSAndroid::RomGbaSlotConfig*) new MelonDSAndroid::RomGbaSlotConfigMemoryExpansion;
+    }
+    else if (slotType == GbaSlotType::MOTION_PAK_HOMEBREW || slotType == GbaSlotType::MOTION_PAK_RETAIL)
+    {
+        return new MelonDSAndroid::RomGbaSlotConfig{
+            slotType == GbaSlotType::MOTION_PAK_RETAIL ? MelonDSAndroid::MOTION_PAK_RETAIL : MelonDSAndroid::MOTION_PAK_HOMEBREW
+        };
     }
     else if (slotType == GbaSlotType::ANALOG_INPUT)
     {

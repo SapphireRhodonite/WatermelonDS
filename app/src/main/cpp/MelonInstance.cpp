@@ -1767,6 +1767,11 @@ void MelonInstance::loadGbaMemoryExpansion()
     nds->SetGBACart(std::move(memoryExpansionCart));
 }
 
+void MelonInstance::loadMotionPak(bool retail)
+{
+    nds->SetGBACart(GBACart::LoadAddon(retail ? GBAAddon_MotionPakRetail : GBAAddon_MotionPakHomebrew, this));
+}
+
 void MelonInstance::loadGbaAnalogInput()
 {
     auto analogInputCart = GBACart::LoadAddon(GBAAddon_Analog, this);
@@ -4446,6 +4451,23 @@ void MelonInstance::releaseKey(u32 key)
         inputMask |= (1 << key);
         nds->SetKeyMask(inputMask);
     }
+}
+
+void MelonInstance::updateMotionData(float ax, float ay, float az, float rx, float ry, float rz)
+{
+    motionData[Platform::MotionAccelerationX].store(ax, std::memory_order_relaxed);
+    motionData[Platform::MotionAccelerationY].store(ay, std::memory_order_relaxed);
+    motionData[Platform::MotionAccelerationZ].store(az, std::memory_order_relaxed);
+    motionData[Platform::MotionRotationX].store(rx, std::memory_order_relaxed);
+    motionData[Platform::MotionRotationY].store(ry, std::memory_order_relaxed);
+    motionData[Platform::MotionRotationZ].store(rz, std::memory_order_relaxed);
+}
+
+float MelonInstance::getMotionData(Platform::MotionQueryType type) const
+{
+    if (type < Platform::MotionAccelerationX || type > Platform::MotionRotationZ)
+        return 0.0f;
+    return motionData[type].load(std::memory_order_relaxed);
 }
 
 void MelonInstance::setSlot2AnalogInput(float x, float y)

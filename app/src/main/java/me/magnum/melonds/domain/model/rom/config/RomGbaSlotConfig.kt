@@ -8,4 +8,6 @@ sealed class RomGbaSlotConfig {
     data object MemoryExpansion : RomGbaSlotConfig()
     data object RumblePak : RomGbaSlotConfig()
     data object AnalogInput : RomGbaSlotConfig()
+    data object MotionPakHomebrew : RomGbaSlotConfig()
+    data object MotionPakRetail : RomGbaSlotConfig()
 }

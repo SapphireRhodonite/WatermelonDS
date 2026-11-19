@@ -665,8 +665,9 @@ namespace Platform
 
     float Addon_MotionQuery(MotionQueryType type, void* userdata)
     {
-        // TODO
-        return 0;
+        if (auto instance = static_cast<MelonDSAndroid::MelonInstance*>(userdata))
+            return instance->getMotionData(type);
+        return type == MotionAccelerationZ ? 9.80665f : 0.0f;
     }
 
     DynamicLibrary* DynamicLibrary_Load(const char* lib)

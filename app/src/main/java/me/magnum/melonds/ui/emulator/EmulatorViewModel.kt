@@ -641,8 +641,12 @@ class EmulatorViewModel @Inject constructor(
         }
     }
 
-    suspend fun isRunningRomLaunch(args: LaunchArgs): Boolean {
-        val running = _emulatorState.value as? EmulatorState.RunningRom ?: return false
+    suspend fun matchesRunningLaunch(args: LaunchArgs): Boolean {
+        val currentState = _emulatorState.value
+        if (currentState is EmulatorState.RunningFirmware) {
+            return args is LaunchArgs.Firmware && args.resumes(currentState.console)
+        }
+        val running = currentState as? EmulatorState.RunningRom ?: return false
         val requestedUri = when (args) {
             is LaunchArgs.RomObject -> args.rom.uri
             is LaunchArgs.RomUri -> args.uri

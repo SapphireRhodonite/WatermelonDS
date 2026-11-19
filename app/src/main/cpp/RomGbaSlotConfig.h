@@ -11,6 +11,8 @@ namespace MelonDSAndroid
         RUMBLE_PAK = 2,
         MEMORY_EXPANSION = 3,
         ANALOG_INPUT = 4,
+        MOTION_PAK_HOMEBREW = 5,
+        MOTION_PAK_RETAIL = 6,
     } ;
 
     struct RomGbaSlotConfig {

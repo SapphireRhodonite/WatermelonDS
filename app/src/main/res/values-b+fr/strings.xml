@@ -212,7 +212,7 @@
     <string name="enable_cheats">Activer les triches</string>
     <string name="cheats_database">Base de données de triches (au format XML)</string>
     <string name="import_cheats">Importer des triches</string>
-    <string name="import_cheats_summary">Importer des triches depuis des fichiers de base de données pour les rendre disponibles. Seules les bases de données au format XML sont prises en charge pour le moment. Toutes les triches précédemment importées seront supprimées.</string>
+    <string name="import_cheats_summary">Importez des bases de codes de triche XML ou usrcheat.dat. Si l’importation réussit, les codes importés précédemment sont remplacés et vos codes personnels sont conservés.</string>
     <string name="rom_shortcut">Raccourci de la ROM</string>
 
     <string name="firmware_nickname">Pseudo</string>
@@ -446,4 +446,9 @@
         <item>Ajuster en bas</item>
         <item>Ajuster à droite</item>
     </string-array>
+    <string name="video_vulkan_driver_mode">Pilote graphique</string>
+    <string name="video_vulkan_driver_unsupported">Les pilotes personnalisés nécessitent la version GitHub arm64 et Android 9 ou supérieur.</string>
+    <string name="video_vulkan_driver_import_other_gpu">Installez un pilote Vulkan au format ZIP conçu pour votre GPU. Si le pilote ne peut pas être ouvert, le pilote système sera utilisé.</string>
+    <string name="hint_search_cheats">Rechercher des codes de triche</string>
+    <string name="no_cheats_found_from_search">Aucun code de triche correspondant</string>
 </resources>

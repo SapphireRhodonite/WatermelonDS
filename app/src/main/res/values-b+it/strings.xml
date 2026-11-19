@@ -226,7 +226,7 @@
     <string name="enable_cheats">Abilita trucchi</string>
     <string name="cheats_database">Database trucchi (formato XML)</string>
     <string name="import_cheats">Importa trucchi</string>
-    <string name="import_cheats_summary">Importa trucchi da un database in modo da renderli disponibili. Al momento sono supportati solo i database XML. Tutti i trucchi importati in precedenza verranno cancellati.</string>
+    <string name="import_cheats_summary">Importa database XML o usrcheat.dat. Se l’importazione riesce, i trucchi importati in precedenza vengono sostituiti e quelli creati da te vengono mantenuti.</string>
     <string name="rom_shortcut">Scorciatoia ROM</string>
 
     <string name="firmware_nickname">Soprannome</string>
@@ -406,6 +406,9 @@
         <item>ROM GBA</item>
         <item>Rumble Pak</item>
         <item>Espansione di memoria</item>
+        <item>Ingresso analogico</item>
+        <item>Motion Pak (Homebrew)</item>
+        <item>Motion Pak (Retail)</item>
     </string-array>
 
     <string-array name="console_type_options">
@@ -506,4 +509,9 @@
         <item>Adatta in basso</item>
         <item>Adatta a destra</item>
     </string-array>
+    <string name="video_vulkan_driver_mode">Driver grafico</string>
+    <string name="video_vulkan_driver_unsupported">I driver personalizzati richiedono la versione GitHub arm64 e Android 9 o successivo.</string>
+    <string name="video_vulkan_driver_import_other_gpu">Installa un archivio ZIP con un driver Vulkan per la tua GPU. Se il driver non si apre, viene usato quello di sistema.</string>
+    <string name="hint_search_cheats">Cerca trucchi</string>
+    <string name="no_cheats_found_from_search">Nessun trucco corrispondente</string>
 </resources>
