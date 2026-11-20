@@ -19,6 +19,9 @@ renderer, RetroArch shader presets and full external display support, wrapped in
 # What WatermelonDS adds
 Everything from the upstream Android port, plus:
 
+### Local Multiplayer:
+* Local DS multiplayer over Wi-Fi Direct, including Download Play, PictoChat, and cross-play with SeedlessDS. [Setup guide](https://github.com/SapphireRhodonite/WatermelonDS/releases/tag/0.8.0.rc4#set-up-your-first-multiplayer-room)
+
 ### RetroAchievements
 *  Achievements, leaderboards and Hardcore mode, with a shared card style for the in-game popups
 *  Your profile and score are shown on load and in the settings screen
@@ -47,7 +50,6 @@ Everything from the upstream Android port, plus:
 The core is kept in sync with melonDS 1.0 and later upstream changes.
 
 # Missing Features
-*  Local Multiplayer
 *  DSi SD card support
 *  Customizable button skins
 
