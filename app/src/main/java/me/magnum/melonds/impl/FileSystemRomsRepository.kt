@@ -15,9 +15,12 @@ import com.google.gson.Gson
 import com.google.gson.annotations.SerializedName
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +33,8 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import me.magnum.melonds.R
 import me.magnum.melonds.common.romprocessors.RomFileProcessorFactory
@@ -84,6 +89,8 @@ class FileSystemRomsRepository(
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val coroutineScope = CoroutineScope(Dispatchers.IO)
+    private val romOptionsScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val romOptionsMutex = Mutex()
     private val romListType: Type = object : TypeToken<List<RomDto>>(){}.type
     private val romMetadataMirrorListType: Type = object : TypeToken<List<RomMetadataMirrorDto>>(){}.type
     private val directoryStateListType: Type = object : TypeToken<List<RomDirectoryStateDto>>(){}.type
@@ -271,11 +278,19 @@ class FileSystemRomsRepository(
         }
     }
 
-    override fun updateRomConfig(rom: Rom, romConfig: RomConfig) {
-        val updatedRom = updateStoredRom(rom.uri, USER_CHANGED_CONFIG) { it.copy(config = romConfig) } ?: return
-        syncRomOptionsFile(updatedRom)
-        onRomsChanged()
-    }
+    override fun updateRomConfig(rom: Rom, romConfig: RomConfig): Deferred<Unit> =
+        romOptionsScope.async(start = CoroutineStart.UNDISPATCHED) {
+            romOptionsMutex.withLock {
+                withContext(Dispatchers.IO) {
+                    val updatedRom = updateStoredRom(rom.uri, USER_CHANGED_CONFIG) { it.copy(config = romConfig) }
+                        ?: return@withContext
+                    runCatching { syncRomOptionsFile(updatedRom) }
+                        .onFailure { Log.w(TAG, "Failed to sync ROM options for ${rom.fileName}", it) }
+                        .getOrThrow()
+                    onRomsChanged()
+                }
+            }
+        }
 
     override fun setRomLastPlayed(rom: Rom, lastPlayed: Date) {
         updateStoredRom(rom.uri, USER_CHANGED_LAST_PLAYED) { it.copy(lastPlayed = lastPlayed) } ?: return
@@ -465,7 +480,10 @@ class FileSystemRomsRepository(
                 }
             } ?: return@withContext null
         }
-        refreshRomConfigFromOptions(current)
+        romOptionsMutex.withLock {
+            val latest = synchronized(roms) { roms[rom.uri] } ?: current
+            refreshRomConfigFromOptions(latest)
+        }
     }
 
     private fun invalidateDirectoryFile(uri: Uri) {

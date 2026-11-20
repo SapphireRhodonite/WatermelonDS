@@ -2,6 +2,7 @@ package me.magnum.melonds.domain.repositories
 
 import android.net.Uri
 import me.magnum.melonds.domain.model.CartridgeId
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import me.magnum.melonds.domain.model.rom.Rom
@@ -19,7 +20,7 @@ interface RomsRepository {
     suspend fun getRomAtUri(uri: Uri): Rom?
 
     fun updateCartridge(rom: Rom, cartridge: CartridgeId?)
-    fun updateRomConfig(rom: Rom, romConfig: RomConfig)
+    fun updateRomConfig(rom: Rom, romConfig: RomConfig): Deferred<Unit>
     fun setRomLastPlayed(rom: Rom, lastPlayed: Date)
     fun addRomPlayTime(rom: Rom, playTime: Duration)
     fun setRomFavorite(rom: Rom, favorite: Boolean)

@@ -180,7 +180,7 @@ internal class ReleaseStateCommandReceiver : BroadcastReceiver() {
             entryPoint.romsRepository().updateRomConfig(
                 rom,
                 rom.config.copy(runtimeConsoleType = runtimeConsole),
-            )
+            ).await()
             true
         } else {
             false
