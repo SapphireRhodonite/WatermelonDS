@@ -1,5 +1,6 @@
 package me.magnum.melonds.ui.romlist
 
+import me.magnum.melonds.ui.romlist.boxart.boxArtKey
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.lifecycle.ViewModel
@@ -61,9 +62,9 @@ class RomListViewModel @Inject constructor(
 
     private val _searchQuery = MutableStateFlow("")
 
-    private val _boxArtByUri = MutableStateFlow<Map<String, String>>(emptyMap())
+    private val _boxArtByRom = MutableStateFlow<Map<String, String>>(emptyMap())
 
-    val boxArtByUri: StateFlow<Map<String, String>> = _boxArtByUri.asStateFlow()
+    val boxArtByRom: StateFlow<Map<String, String>> = _boxArtByRom.asStateFlow()
     val romCoversEnabled = settingsRepository.observeRomCoverEnabled()
         .stateIn(viewModelScope, SharingStarted.Eagerly, settingsRepository.isRomCoverEnabled())
     private val boxArtRequestsInFlight = mutableSetOf<String>()
@@ -76,8 +77,8 @@ class RomListViewModel @Inject constructor(
     fun requestBoxArt(rom: Rom) {
         if (!settingsRepository.isRomCoverEnabled()) return
         if (rom.config.iconSource != RomIconSource.DEFAULT) return
-        val key = rom.uri.toString()
-        if (_boxArtByUri.value.containsKey(key)) return
+        val key = rom.boxArtKey()
+        if (_boxArtByRom.value.containsKey(key)) return
         synchronized(boxArtRequestsInFlight) {
             if (!boxArtRequestsInFlight.add(key)) return
         }
@@ -85,7 +86,7 @@ class RomListViewModel @Inject constructor(
             val url = boxArtSemaphore.withPermit {
                 runCatching { boxArtRepository.getBoxArtUrl(rom) }.getOrNull()
             }
-            _boxArtByUri.update { it + (key to (url ?: "")) }
+            _boxArtByRom.update { it + (key to (url ?: "")) }
             synchronized(boxArtRequestsInFlight) {
                 boxArtRequestsInFlight.remove(key)
             }

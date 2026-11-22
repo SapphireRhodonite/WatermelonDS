@@ -1,5 +1,6 @@
 package me.magnum.melonds.ui.romlist.composables
 
+import me.magnum.melonds.ui.romlist.boxart.boxArtKey
 import me.magnum.melonds.ui.common.LocalBrandIntroTarget
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -440,7 +441,7 @@ fun LibrarySectionHeader(
 fun ContinuePlayingShelf(
     roms: List<Rom>,
     coverByUri: Map<String, String>,
-    boxArtByUri: Map<String, String> = emptyMap(),
+    boxArtByRom: Map<String, String> = emptyMap(),
     useCoverArt: Boolean = true,
     onRomClicked: (Rom) -> Unit,
     onRomLongPressed: (Rom) -> Unit,
@@ -465,14 +466,14 @@ fun ContinuePlayingShelf(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             items(roms, key = { it.uri.toString() }) { rom ->
-                LaunchedEffect(rom.uri, rom.config.iconSource, useCoverArt) {
+                LaunchedEffect(rom.boxArtKey(), rom.config.iconSource, useCoverArt) {
                     onRomVisible(rom)
                 }
                 ContinuePlayingCard(
                     rom = rom,
                     coverUrl = coverByUri[rom.uri.toString()],
-                    boxArtUrl = boxArtByUri[rom.uri.toString()]?.takeIf { it.isNotEmpty() },
-                    boxArtLoading = boxArtByUri[rom.uri.toString()] == null,
+                    boxArtUrl = boxArtByRom[rom.boxArtKey()]?.takeIf { it.isNotEmpty() },
+                    boxArtLoading = boxArtByRom[rom.boxArtKey()] == null,
                     useCoverArt = useCoverArt,
                     onClick = { onRomClicked(rom) },
                     onLongPress = { onRomLongPressed(rom) },

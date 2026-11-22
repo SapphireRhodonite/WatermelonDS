@@ -1,115 +1,93 @@
 package me.magnum.melonds.ui.romlist.boxart
 
-import java.net.URLDecoder
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import java.io.Reader
 import java.text.Normalizer
 
-internal object BoxArtMatcher {
-    private val qualifiers = Regex("\\(([^)]*)\\)")
-    private val combiningMarks = Regex("\\p{M}+")
-    private val nameQualifiers = Regex("\\(.*?\\)|\\[.*?]")
-    private val nonAlphanumeric = Regex("[^a-z0-9]+")
-    private val whitespace = Regex("\\s+")
+internal class BoxArtMatcher private constructor(
+    private val nds: PlatformIndex,
+    private val dsiWare: PlatformIndex,
+) {
+    data class Entry(val url: String, val gameCode: String?, val revision: Int?)
 
-    data class Entry(
-        val encodedName: String,
-        val fullNormalized: String,
-        val normalized: String,
-        val tokens: Set<String>,
-        val regions: Set<String>,
-        val qualifierCount: Int,
+    private class PlatformIndex(
+        val variants: Map<String, Entry>,
+        val digests: Map<String, Entry>,
+        val codes: Map<String, Entry>,
+        val revisions: Map<String, Entry>,
+        val cacheKeys: Map<String, String>,
     )
 
-    fun parseIndex(raw: String): List<Entry> = raw.lineSequence()
-        .filter { it.isNotBlank() }
-        .map { encoded ->
-            val decoded = runCatching { URLDecoder.decode(encoded, "UTF-8") }.getOrDefault(encoded)
-            val fullName = decoded.removeSuffix(".png")
-            val normalized = normalize(fullName.substringBefore(" ("))
-            val tags = qualifiers.findAll(fullName).map { it.groupValues[1] }.toList()
-            val regions = tags.asSequence()
-                .flatMap { it.split(',').asSequence() }
-                .map { it.trim().lowercase() }
-                .toSet()
-            Entry(encoded, normalize(fullName, false), normalized, normalized.split(' ').filter { it.isNotEmpty() }.toSet(), regions, tags.size)
-        }
-        .toList()
+    fun findMatch(fileName: String, gameCode: String?, revision: Int?, romSha1: String? = null, isDsiWare: Boolean = false): Entry? {
+        val index = if (isDsiWare) dsiWare else nds
+        if (romSha1 != null) return index.digests[romSha1.lowercase()]
 
-    fun findBestMatch(candidates: List<String>, entries: List<Entry>, gameCode: String?): Entry? {
-        val regions = preferredRegions(gameCode)
-        fun regionRank(entry: Entry): Int {
-            if (regions.isEmpty()) return 0
-            val rank = regions.indexOfFirst { it in entry.regions }
-            return if (rank >= 0) rank else regions.size + if ("world" in entry.regions) 0 else 1
-        }
-        val regionalOrder = compareBy<Entry> { regionRank(it) }.thenBy { it.qualifierCount }
-
-        for (candidate in candidates) {
-            val fullNormalized = normalize(candidate, false)
-            if (fullNormalized.isBlank()) continue
-            entries.firstOrNull { it.fullNormalized == fullNormalized && regionRank(it) == 0 }?.let { return it }
-        }
-
-        for (candidate in candidates) {
-            val normalized = normalize(candidate.substringBefore(" (").ifBlank { candidate })
-            if (normalized.isBlank()) continue
-            val fullNormalized = normalize(candidate, false)
-            entries.filter { it.normalized == normalized }
-                .minWithOrNull(compareBy<Entry> { regionRank(it) }.thenBy { if (it.fullNormalized == fullNormalized) 0 else 1 }.thenBy { it.qualifierCount })
-                ?.let { return it }
-        }
-
-        var best: Entry? = null
-        var bestScore = 0.0
-        for (candidate in candidates) {
-            val tokens = normalize(candidate).split(' ').filter { it.isNotEmpty() }.toSet()
-            if (tokens.isEmpty()) continue
-            for (entry in entries) {
-                if (entry.tokens.isEmpty()) continue
-                val intersection = tokens.intersect(entry.tokens).size.toDouble()
-                if (intersection == 0.0) continue
-                val score = intersection / tokens.union(entry.tokens).size.toDouble()
-                if (score > bestScore || (score == bestScore && best?.let { regionalOrder.compare(entry, it) < 0 } == true)) {
-                    bestScore = score
-                    best = entry
-                }
+        if (isDsiWare && gameCode == null) return null
+        index.variants[normalize(fileName)]?.let { entry ->
+            return entry.takeIf {
+                (gameCode == null || it.gameCode == gameCode) &&
+                    (it.revision == null || it.revision == revision || (!isDsiWare && revision == null))
             }
         }
-        return best.takeIf { bestScore >= 0.65 }
+
+        if (gameCode == null) return null
+        return index.revisions["$gameCode:$revision"] ?: index.codes[gameCode]
     }
 
-    private fun preferredRegions(gameCode: String?): List<String> {
-        if (gameCode == null || gameCode.length != 4 || gameCode.any { it !in 'A'..'Z' && it !in '0'..'9' }) return emptyList()
-        return when (gameCode.last()) {
-            'E', 'L' -> listOf("usa")
-            'J' -> listOf("japan")
-            'P', 'W', 'X', 'Y', 'Z' -> listOf("europe")
-            'D' -> listOf("germany", "europe")
-            'F' -> listOf("france", "europe")
-            'I' -> listOf("italy", "europe")
-            'S' -> listOf("spain", "europe")
-            'H' -> listOf("netherlands", "europe")
-            'M' -> listOf("sweden", "europe")
-            'N' -> listOf("norway", "europe")
-            'Q' -> listOf("denmark", "europe")
-            'R' -> listOf("russia", "europe")
-            'K' -> listOf("korea")
-            'C' -> listOf("china")
-            'U' -> listOf("australia")
-            'V' -> listOf("europe", "australia")
-            'T' -> listOf("usa", "australia")
-            'A' -> listOf("asia")
-            'O' -> listOf("world")
-            else -> emptyList()
+    fun cacheKey(url: String): String? = nds.cacheKeys[url] ?: dsiWare.cacheKeys[url]
+
+    companion object {
+        private const val NDS_SOURCE = "libretro-thumbnails/Nintendo_-_Nintendo_DS"
+        private const val DSI_SOURCE = "libretro-thumbnails/Nintendo_-_Nintendo_DSi"
+        private val gitSha = Regex("[0-9a-f]{40}")
+
+        private fun normalize(name: String): String = Normalizer.normalize(name, Normalizer.Form.NFC)
+
+        fun read(reader: Reader): BoxArtMatcher {
+            val json = JsonParser.parseReader(reader).asJsonObject
+            require(json.get("schema_version").asInt == 2)
+            val platforms = json.getAsJsonObject("platforms")
+            return BoxArtMatcher(
+                readPlatform(platforms.getAsJsonObject("nds"), NDS_SOURCE),
+                readPlatform(platforms.getAsJsonObject("dsiware"), DSI_SOURCE),
+            )
         }
-    }
 
-    private fun normalize(value: String, stripQualifiers: Boolean = true): String {
-        return Normalizer.normalize(value, Normalizer.Form.NFD)
-            .replace(combiningMarks, "")
-            .lowercase()
-            .let { if (stripQualifiers) it.replace(nameQualifiers, " ") else it }
-            .replace(nonAlphanumeric, " ")
-            .trim()
-            .replace(whitespace, " ")
+        private fun readPlatform(json: JsonObject, repository: String): PlatformIndex {
+            val source = json.getAsJsonObject("source")
+            require(source.get("repository").asString == repository)
+            require(source.get("directory").asString == "Named_Boxarts")
+            val revision = source.get("revision").asString
+            require(gitSha.matches(revision))
+            val prefix = "https://raw.githubusercontent.com/$repository/$revision/Named_Boxarts/"
+
+            val variants = mutableMapOf<String, Entry>()
+            val digests = mutableMapOf<String, Entry>()
+            val ambiguousDigests = mutableSetOf<String>()
+            val cacheKeys = mutableMapOf<String, String>()
+            val entries = json.getAsJsonArray("entries").map { value ->
+                val row = value.asJsonObject
+                val url = row.get("url").asString
+                val blob = row.get("image_git_blob_sha").asString
+                require(url.startsWith(prefix) && url.endsWith(".png") && gitSha.matches(blob))
+                val entry = Entry(url, row.get("game_code")?.asString, row.get("rom_revision")?.asInt)
+                val variant = normalize(row.get("variant").asString)
+                require(variants.put(variant, entry) == null)
+                row.get("rom_sha1")?.asString?.let { sha ->
+                    require(gitSha.matches(sha))
+                    if (digests.put(sha, entry) != null) ambiguousDigests += sha
+                }
+                cacheKeys[url] = "boxart:$repository:$blob"
+                entry
+            }
+            require(entries.isNotEmpty())
+            ambiguousDigests.forEach(digests::remove)
+
+            fun readFallbacks(name: String): Map<String, Entry> =
+                json.getAsJsonObject(name).entrySet().associate { (key, value) -> key to entries[value.asInt] }
+
+            return PlatformIndex(variants, digests, readFallbacks("code_fallbacks"), readFallbacks("code_revision_fallbacks"), cacheKeys)
+        }
     }
 }

@@ -1,5 +1,6 @@
 package me.magnum.melonds.ui.romlist
 
+import me.magnum.melonds.ui.romlist.boxart.boxArtKey
 import android.app.SearchManager
 import android.content.Intent
 import android.graphics.Color
@@ -254,13 +255,13 @@ class RomListActivity : AppCompatActivity() {
                 (it as? RomBrowserEntry.RomItem)?.rom?.takeIf { current -> current.uri == highlighted?.uri }
             } ?: browser.continuePlaying.firstOrNull { it.uri == highlighted?.uri } ?: highlighted
             if (rom != null) {
-                val boxArtByUri = viewModel.boxArtByUri.collectAsState().value
+                val boxArtByRom = viewModel.boxArtByRom.collectAsState().value
                 val raCoverByUri = viewModel.raCoverByUri.collectAsState().value
                 val useCoverArt = viewModel.romCoversEnabled.collectAsState().value
                 val iconSource = rom.config.iconSource.resolve(useCoverArt)
                 me.magnum.melonds.ui.common.ExternalLibraryGameInfo(
                     rom = rom.copy(config = rom.config.copy(iconSource = iconSource)),
-                    boxArtUrl = boxArtByUri[rom.uri.toString()]?.takeIf {
+                    boxArtUrl = boxArtByRom[rom.boxArtKey()]?.takeIf {
                         it.isNotEmpty() && iconSource == RomIconSource.DEFAULT
                     },
                     raCoverUrl = raCoverByUri[rom.uri.toString()],

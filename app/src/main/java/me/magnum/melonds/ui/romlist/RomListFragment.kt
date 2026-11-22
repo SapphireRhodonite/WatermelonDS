@@ -104,7 +104,7 @@ class RomListFragment : Fragment() {
                         .collectAsState(initial = RomScanningStatus.NOT_SCANNING)
                     val confirmedAchievementHashes by romListViewModel.confirmedAchievementHashes.collectAsState()
                     val raCoverByUri by romListViewModel.raCoverByUri.collectAsState()
-                    val boxArtByUri by romListViewModel.boxArtByUri.collectAsState()
+                    val boxArtByRom by romListViewModel.boxArtByRom.collectAsState()
                     val useCoverArt by romListViewModel.romCoversEnabled.collectAsState()
                     var contextRomUri by remember { mutableStateOf<String?>(null) }
                     var searchQuery by remember { mutableStateOf("") }
@@ -122,7 +122,7 @@ class RomListFragment : Fragment() {
                         RomBrowserScreen(
                             state = state,
                             coverByUri = raCoverByUri,
-                            boxArtByUri = boxArtByUri,
+                            boxArtByRom = boxArtByRom,
                             useCoverArt = useCoverArt,
                             searchQuery = searchQuery,
                             allowConfiguration = allowRomConfiguration,

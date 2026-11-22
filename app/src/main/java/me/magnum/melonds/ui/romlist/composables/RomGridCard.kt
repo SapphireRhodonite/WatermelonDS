@@ -147,13 +147,20 @@ fun RomGridCard(
             )
         }
 
-        if (!artLoaded) {
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
+                .padding(start = 9.dp, end = 9.dp, top = 22.dp, bottom = 9.dp),
+            verticalAlignment = Alignment.Bottom,
+        ) {
+            if (artLoaded) {
+                RomMiniIcon(rom = rom, raCoverUrl = coverUrl)
+                Spacer(Modifier.width(5.dp))
+            }
             Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .fillMaxWidth()
-                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.8f))))
-                    .padding(start = 9.dp, end = 9.dp, top = 22.dp, bottom = 9.dp),
+                modifier = Modifier.weight(1f),
             ) {
                 Text(
                     text = romDisplayName(rom),
@@ -176,12 +183,6 @@ fun RomGridCard(
                     )
                 }
             }
-        } else {
-            RomMiniIcon(
-                rom = rom,
-                raCoverUrl = coverUrl,
-                modifier = Modifier.align(Alignment.BottomStart).padding(7.dp),
-            )
         }
 
         if (isFocused) {

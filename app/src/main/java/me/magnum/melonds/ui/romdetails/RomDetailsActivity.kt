@@ -1,5 +1,6 @@
 package me.magnum.melonds.ui.romdetails
 
+import me.magnum.melonds.ui.romlist.boxart.boxArtKey
 import android.content.ClipData
 import android.content.Intent
 import android.net.Uri
@@ -79,7 +80,7 @@ class RomDetailsActivity : AppCompatActivity() {
                 )
                 else -> {
                     val raCoverUrl by romDetailsViewModel.raCoverUrl.collectAsState()
-                    val boxArtUrl by produceState<String?>(initialValue = null, rom.uri, rom.config.iconSource) {
+                    val boxArtUrl by produceState<String?>(initialValue = null, rom.boxArtKey(), rom.config.iconSource) {
                         value = if (rom.config.iconSource == RomIconSource.DEFAULT) {
                             runCatching { boxArtRepository.getBoxArtUrl(rom) }.getOrNull()
                         } else null
@@ -132,7 +133,7 @@ class RomDetailsActivity : AppCompatActivity() {
             val retroAchievementsUiState by romRetroAchievementsViewModel.uiState.collectAsState()
             val offlineAchievementsUiState by romRetroAchievementsViewModel.offlineAchievementsUiState.collectAsState()
 
-            val boxArtUrl by produceState<String?>(initialValue = null, rom.uri, rom.config.iconSource) {
+            val boxArtUrl by produceState<String?>(initialValue = null, rom.boxArtKey(), rom.config.iconSource) {
                 value = if (rom.config.iconSource == RomIconSource.DEFAULT) {
                     runCatching { boxArtRepository.getBoxArtUrl(rom) }.getOrNull()
                 } else null
