@@ -159,7 +159,9 @@ object MultiplayerRoom {
                 val (listener, port) = withContext(Dispatchers.IO) {
                     val fd = Os.socket(OsConstants.AF_INET, OsConstants.SOCK_STREAM, 0)
                     try {
-                        ParcelFileDescriptor.dup(fd).use { bindInterface(it, network.route) }
+                        ParcelFileDescriptor.dup(fd).use {
+                            bindInterface(it, network.route, allowAddressBoundListener = true)
+                        }
                         Os.setsockoptInt(fd, OsConstants.SOL_SOCKET, OsConstants.SO_REUSEADDR, 1)
                         try {
                             Os.bind(fd, network.route.local, PORT)
@@ -196,8 +198,15 @@ object MultiplayerRoom {
             }
         }
 
-    private fun bindInterface(fd: ParcelFileDescriptor, route: MultiplayerDirectNetwork.Route) {
-        check(MultiplayerNative.bindInterface(fd.fd, route.interfaceIndex)) { "Wi-Fi Direct interface unavailable" }
+    private fun bindInterface(
+        fd: ParcelFileDescriptor,
+        route: MultiplayerDirectNetwork.Route,
+        allowAddressBoundListener: Boolean = false,
+    ) {
+        val result = MultiplayerNative.bindInterface(fd.fd, route.interfaceIndex)
+        check(result == MultiplayerNative.INTERFACE_BOUND ||
+            (allowAddressBoundListener && result == MultiplayerNative.INTERFACE_PERMISSION_DENIED)
+        ) { "Wi-Fi Direct interface unavailable" }
     }
 
     suspend fun join(context: Context, profile: MultiplayerProfile, target: Target, hasGame: Boolean,

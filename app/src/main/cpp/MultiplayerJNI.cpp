@@ -46,10 +46,11 @@ Java_me_magnum_melonds_multiplayer_MultiplayerNative_start(JNIEnv* env, jobject,
     } catch (...) { Fail(env); return -4; }
 }
 
-JNIEXPORT jboolean JNICALL
+JNIEXPORT jint JNICALL
 Java_me_magnum_melonds_multiplayer_MultiplayerNative_bindInterface(JNIEnv*, jobject, jint fd, jint index)
 {
-    return fd >= 0 && index > 0 && melonDS::LAN::BindInterface(fd, static_cast<unsigned>(index)) ? JNI_TRUE : JNI_FALSE;
+    if (fd < 0 || index <= 0) return static_cast<jint>(melonDS::LAN::InterfaceBinding::Failed);
+    return static_cast<jint>(melonDS::LAN::BindInterface(fd, static_cast<unsigned>(index)));
 }
 
 JNIEXPORT jint JNICALL
