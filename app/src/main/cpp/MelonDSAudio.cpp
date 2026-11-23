@@ -3,6 +3,7 @@
 #include "MicInputOboeCallback.h"
 #include "mic_blow.h"
 #include "OboeCallback.h"
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
@@ -40,14 +41,58 @@ int audioOutputLatency = 1;
 int audioOutputVolume = 256;
 std::mutex audioSettingsUpdateMutex;
 
-std::shared_ptr<oboe::AudioStream> micInputStream;
-std::shared_ptr<MicInputOboeCallback> micInputCallback;
+namespace MelonDSAndroid
+{
+    void recoverMicInput(std::uint64_t generation, std::uint64_t runEpoch);
+}
 
-std::mutex micBufferMutex;
-int actualMicSource = 0;
-bool isMicInputEnabled = true;
-bool isMicOn = false;
-int micBufferReadPos = 0;
+namespace
+{
+    class MicInputErrorCallback final : public oboe::AudioStreamErrorCallback
+    {
+    public:
+        explicit MicInputErrorCallback(std::uint64_t generation) : generation(generation) {}
+
+        bool arm(std::uint64_t runEpoch)
+        {
+            auto current = armedEpoch.load();
+            return current != failed && armedEpoch.compare_exchange_strong(current, runEpoch);
+        }
+
+        bool onError(oboe::AudioStream*, oboe::Result) override
+        {
+            errorEpoch = armedEpoch.exchange(failed);
+            return false;
+        }
+
+        void onErrorAfterClose(oboe::AudioStream*, oboe::Result result) override
+        {
+            if (result == oboe::Result::ErrorDisconnected && errorEpoch != failed)
+                MelonDSAndroid::recoverMicInput(generation, errorEpoch);
+        }
+
+    private:
+        static constexpr std::uint64_t failed = 0;
+        const std::uint64_t generation;
+        std::atomic<std::uint64_t> armedEpoch{1};
+        std::uint64_t errorEpoch = failed;
+    };
+
+    std::mutex micStateMutex;
+    std::mutex micBufferMutex;
+    std::shared_ptr<oboe::AudioStream> micInputStream;
+    std::shared_ptr<MicInputErrorCallback> micErrorCallback;
+    std::shared_ptr<MicInputOboeCallback> micInputCallback;
+    std::uint64_t micGeneration = 0;
+    std::uint64_t micRunEpoch = 1;
+    bool micSessionRunning = false;
+    bool micRecoveryAttempted = false;
+    bool isMicInputEnabled = true;
+    bool isMicOn = false;
+    int actualMicSource = 0;
+    int micGain = 0;
+    int micBufferReadPos = 0;
+}
 
 namespace MelonDSAndroid
 {
@@ -527,9 +572,15 @@ namespace MelonDSAndroid
 
     // MICROPHONE
 
-    void setupMicInputStream(int gain)
+    bool canCaptureMic()
     {
-        micInputCallback = std::make_shared<MicInputOboeCallback>(MIC_BUFFER_SIZE, micBufferMutex, gain);
+        return micSessionRunning && isMicInputEnabled && isMicOn && actualMicSource == 2;
+    }
+
+    bool setupMicInputStream()
+    {
+        auto dataCallback = std::make_shared<MicInputOboeCallback>(MIC_BUFFER_SIZE, micBufferMutex, micGain);
+        auto errorCallback = std::make_shared<MicInputErrorCallback>(++micGeneration);
         oboe::AudioStreamBuilder micStreamBuilder;
         micStreamBuilder.setChannelCount(1);
         micStreamBuilder.setFramesPerCallback(1024);
@@ -541,15 +592,30 @@ namespace MelonDSAndroid
         micStreamBuilder.setPerformanceMode(oboe::PerformanceMode::None);
         micStreamBuilder.setSharingMode(oboe::SharingMode::Exclusive);
         micStreamBuilder.setUsage(oboe::Usage::Game);
-        micStreamBuilder.setDataCallback(micInputCallback);
+        micStreamBuilder.setDataCallback(dataCallback);
+        micStreamBuilder.setErrorCallback(errorCallback);
 
-        oboe::Result micResult = micStreamBuilder.openStream(micInputStream);
-        if (micResult != oboe::Result::OK)
+        auto result = micStreamBuilder.openStream(micInputStream);
+        if (result != oboe::Result::OK)
         {
-            actualMicSource = 1;
             Log(Error, "Failed to init mic audio stream");
-            micInputCallback = nullptr;
+            return false;
         }
+        micErrorCallback = std::move(errorCallback);
+        std::lock_guard<std::mutex> bufferLock(micBufferMutex);
+        micInputCallback = std::move(dataCallback);
+        micBufferReadPos = 0;
+        return true;
+    }
+
+    void discardMicInput()
+    {
+        ++micGeneration;
+        micInputStream.reset();
+        micErrorCallback.reset();
+        std::lock_guard<std::mutex> bufferLock(micBufferMutex);
+        micInputCallback.reset();
+        micBufferReadPos = 0;
     }
 
     void cleanupMicInputStream()
@@ -558,53 +624,91 @@ namespace MelonDSAndroid
         {
             micInputStream->requestStop();
             micInputStream->close();
-
-            micInputStream = nullptr;
-
-            std::lock_guard<std::mutex> lock(micBufferMutex);
-            micInputCallback = nullptr;
         }
+        discardMicInput();
     }
 
     void startMicStreamIfAllowed()
     {
-        if (actualMicSource == 2 && micInputStream && isMicInputEnabled && isMicOn)
-            micInputStream->requestStart();
+        if (canCaptureMic() && micInputStream && micErrorCallback->arm(micRunEpoch))
+        {
+            auto result = micInputStream->requestStart();
+            if (result == oboe::Result::ErrorDisconnected || result == oboe::Result::ErrorClosed)
+                Log(Warn, "Device microphone start failed: %s", oboe::convertToText(result));
+        }
+    }
+
+    void stopMicCapture()
+    {
+        ++micRunEpoch;
+        if (micInputStream)
+            micInputStream->requestStop();
+    }
+
+    void recoverMicInput(std::uint64_t generation, std::uint64_t runEpoch)
+    {
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
+        if (generation != micGeneration)
+            return;
+
+        discardMicInput();
+        if (runEpoch != micRunEpoch || !canCaptureMic() || micRecoveryAttempted)
+            return;
+
+        micRecoveryAttempted = true;
+        if (setupMicInputStream())
+        {
+            Log(Info, "Reopened disconnected device microphone");
+            startMicStreamIfAllowed();
+        }
+    }
+
+    void setMicSource(int source)
+    {
+        std::lock_guard<std::mutex> bufferLock(micBufferMutex);
+        actualMicSource = source;
     }
 
     void userEnableMic()
     {
-        isMicInputEnabled = true;
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
+        {
+            std::lock_guard<std::mutex> bufferLock(micBufferMutex);
+            isMicInputEnabled = true;
+        }
         startMicStreamIfAllowed();
     }
 
     void userDisableMic()
     {
-        isMicInputEnabled = false;
-        if (micInputStream)
-            micInputStream->requestStop();
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
+        {
+            std::lock_guard<std::mutex> bufferLock(micBufferMutex);
+            isMicInputEnabled = false;
+        }
+        stopMicCapture();
     }
 
     void enableMic()
     {
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
+        if (!isMicOn)
+            micRecoveryAttempted = false;
         isMicOn = true;
         startMicStreamIfAllowed();
     }
 
     void disableMic()
     {
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
         isMicOn = false;
-        if (micInputStream)
-            micInputStream->requestStop();
+        stopMicCapture();
     }
 
     int readMic(s16* data, int maxlength)
     {
-        int micSource = actualMicSource;
-        if (!isMicInputEnabled)
-        {
-            micSource = 0;
-        }
+        std::lock_guard<std::mutex> bufferLock(micBufferMutex);
+        const int micSource = isMicInputEnabled ? actualMicSource : 0;
 
         if (micSource == 0)
         {
@@ -617,13 +721,8 @@ namespace MelonDSAndroid
 
         if (micSource == 2)
         {
-            micBufferMutex.lock();
             if (!micInputCallback)
-            {
-                micBufferMutex.unlock();
-                memset(data, 0, maxlength * sizeof(s16));
-                return maxlength;
-            }
+                return 0;
             micBufferLength = MIC_BUFFER_SIZE / sizeof(s16);
             micBuffer = micInputCallback->buffer;
         }
@@ -660,9 +759,6 @@ namespace MelonDSAndroid
             readlength += thislen;
         }
 
-        if (micSource == 2)
-            micBufferMutex.unlock();
-
         return readlength;
     }
 
@@ -671,8 +767,6 @@ namespace MelonDSAndroid
     void setupAudio(AudioSettings audioSettings)
     {
         std::lock_guard<std::mutex> settingsLock(audioSettingsUpdateMutex);
-        isMicOn = false;
-        actualMicSource = audioSettings.micSource;
         beginAudioOutputLifecycle();
         {
 
@@ -684,8 +778,15 @@ namespace MelonDSAndroid
         if (audioSettings.soundEnabled)
             setupAudioOutputStream(audioSettings.audioLatency, audioSettings.volume);
 
-        if (audioSettings.micSource == 2)
-            setupMicInputStream(audioSettings.micGain);
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
+        cleanupMicInputStream();
+        micSessionRunning = true;
+        isMicOn = false;
+        micRecoveryAttempted = false;
+        micGain = audioSettings.micGain;
+        setMicSource(audioSettings.micSource);
+        if (actualMicSource == 2 && !setupMicInputStream())
+            setMicSource(1);
     }
 
     void updateAudioSettings(AudioSettings audioSettings)
@@ -713,17 +814,22 @@ namespace MelonDSAndroid
             disableAudioOutputStream();
         }
 
-        int oldMicSource = actualMicSource;
-        actualMicSource = audioSettings.micSource;
-
-        if (oldMicSource == 2 && audioSettings.micSource != 2) {
-            // No longer using device mic. Destroy stream
-            cleanupMicInputStream();
-        } else if (oldMicSource != 2 && audioSettings.micSource == 2) {
-            // Now using device mic. Setup stream
-            setupMicInputStream(audioSettings.micGain);
-        } else if (micInputCallback) {
-            micInputCallback->setGain(audioSettings.micGain);
+        {
+            std::lock_guard<std::mutex> stateLock(micStateMutex);
+            const int oldMicSource = actualMicSource;
+            micGain = audioSettings.micGain;
+            if (oldMicSource != audioSettings.micSource)
+            {
+                cleanupMicInputStream();
+                micRecoveryAttempted = false;
+                setMicSource(audioSettings.micSource);
+                if (actualMicSource == 2 && !setupMicInputStream())
+                    setMicSource(1);
+            }
+            else if (micInputCallback)
+            {
+                micInputCallback->setGain(micGain);
+            }
         }
 
         {
@@ -745,13 +851,18 @@ namespace MelonDSAndroid
     void cleanupAudio()
     {
         {
+            std::lock_guard<std::mutex> stateLock(micStateMutex);
+            micSessionRunning = false;
+            cleanupMicInputStream();
+        }
+
+        {
             std::lock_guard<std::mutex> captureLifecycleLock(
                 audioOutputCaptureLifecycleMutex);
             shutdownAudioOutput();
 
             audioOutputCapture->finishForSessionEnd();
         }
-        cleanupMicInputStream();
     }
 
     void setAudioOutputRunIntent(bool running)
@@ -802,6 +913,8 @@ namespace MelonDSAndroid
     {
         setAudioOutputRunIntent(true);
 
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
+        micSessionRunning = true;
         startMicStreamIfAllowed();
     }
 
@@ -809,7 +922,8 @@ namespace MelonDSAndroid
     {
         setAudioOutputRunIntent(false);
 
-        if (micInputStream)
-            micInputStream->requestStop();
+        std::lock_guard<std::mutex> stateLock(micStateMutex);
+        micSessionRunning = false;
+        stopMicCapture();
     }
 }
