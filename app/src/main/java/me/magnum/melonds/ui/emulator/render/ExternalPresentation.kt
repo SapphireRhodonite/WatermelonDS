@@ -1,7 +1,7 @@
 package me.magnum.melonds.ui.emulator.render
 
 import android.app.Presentation
-import android.content.Context
+import android.app.Activity
 import android.graphics.Color
 import android.os.Build
 import android.view.Display
@@ -30,11 +30,15 @@ import kotlin.collections.orEmpty
 import kotlin.math.max
 
 class ExternalPresentation(
-    context: Context,
+    context: Activity,
     display: Display,
     private val frameRenderCoordinator: FrameRenderCoordinator,
+    private val usePanelActivity: Boolean,
     private var excludeTouchScreenFromSystemGestures: Boolean,
 ) : Presentation(context, display) {
+    private val ownerContext = context
+    private val hostContentInActivity = display.displayId == Display.DEFAULT_DISPLAY && display.flags and Display.FLAG_PRESENTATION == 0
+
     private data class ScreenPresentationAreas(
         val topScreenRect: me.magnum.melonds.domain.model.Rect?,
         val bottomScreenRect: me.magnum.melonds.domain.model.Rect?,
@@ -108,7 +112,7 @@ class ExternalPresentation(
             container.setViewTreeSavedStateRegistryOwner(owner)
         }
 
-        setContentView(container)
+        if (!hostContentInActivity) setContentView(container)
     }
 
     fun swapScreens() {
@@ -148,7 +152,7 @@ class ExternalPresentation(
             currentBackground ?: RuntimeBackground.None,
         )
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && window?.decorView?.isAttachedToWindow == true) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && container.isAttachedToWindow) {
             val touchScreenArea = if (excludeTouchScreenFromSystemGestures) {
                 listOfNotNull(areas.bottomScreenRect, areas.hybridBottomScreenRect).map {
                     android.graphics.Rect(it.x, it.y, it.right, it.bottom)
@@ -221,8 +225,36 @@ class ExternalPresentation(
         updateRendererScreenAreas()
     }
 
+    private var panelSession: GamePanelActivity.Session? = null
+
+    fun showOnDisplay(): Boolean {
+        if (hostContentInActivity) {
+            panelSession = GamePanelActivity.open(ownerContext, display, container)
+            if (panelSession == null) {
+                frameRenderCoordinator.removeSurface(surfaceView)
+                return false
+            }
+        } else {
+            show()
+        }
+        return true
+    }
+
+    override fun dismiss() {
+        if (hostContentInActivity) {
+            panelSession?.close()
+            panelSession = null
+            frameRenderCoordinator.removeSurface(surfaceView)
+        } else {
+            super.dismiss()
+        }
+    }
+
     override fun onStart() {
         super.onStart()
+        if (usePanelActivity) {
+            panelSession = GamePanelActivity.open(ownerContext, display)
+        }
         layoutView.post {
             updateRendererScreenAreas()
         }
@@ -230,6 +262,8 @@ class ExternalPresentation(
 
     override fun onStop() {
         super.onStop()
+        panelSession?.close()
+        panelSession = null
         frameRenderCoordinator.removeSurface(surfaceView)
     }
 

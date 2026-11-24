@@ -4,6 +4,8 @@ import android.app.Presentation
 import android.content.Context
 import android.hardware.display.DisplayManager
 import android.os.Bundle
+import android.view.ViewTreeObserver
+import android.view.WindowManager
 import android.view.Display
 import androidx.activity.ComponentActivity
 import androidx.compose.foundation.background
@@ -19,6 +21,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.Observer
 import androidx.lifecycle.setViewTreeLifecycleOwner
 import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
@@ -39,6 +44,7 @@ class ExternalInfoPresentation(
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window?.addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE)
         val composeView = ComposeView(context).apply {
             setViewTreeLifecycleOwner(activity)
             setViewTreeViewModelStoreOwner(activity)
@@ -61,6 +67,17 @@ class ExternalInfoPresentation(
 
 class ExternalInfoDisplayController(private val activity: ComponentActivity) {
 
+    companion object {
+        private val gameDisplays = MutableLiveData<Map<Any, Set<Int>>>(emptyMap())
+
+        internal fun setGameDisplays(owner: Any, displays: Set<Int>) {
+            val current = gameDisplays.value.orEmpty()
+            if (current[owner].orEmpty() != displays) {
+                gameDisplays.value = if (displays.isEmpty()) current - owner else current + (owner to displays)
+            }
+        }
+    }
+
     private var presentation: ExternalInfoPresentation? = null
     private var currentContent: (@Composable () -> Unit)? = null
 
@@ -73,12 +90,19 @@ class ExternalInfoDisplayController(private val activity: ComponentActivity) {
         override fun onDisplayChanged(displayId: Int) = Unit
     }
 
+    private val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { refresh() }
+    private val gameDisplayObserver = Observer<Map<Any, Set<Int>>> { refresh() }
+
     fun attach() {
+        activity.window.decorView.viewTreeObserver.addOnWindowFocusChangeListener(focusListener)
         displayManager.registerDisplayListener(displayListener, null)
+        gameDisplays.observe(activity, gameDisplayObserver)
         refresh()
     }
 
     fun detach() {
+        gameDisplays.removeObserver(gameDisplayObserver)
+        activity.window.decorView.viewTreeObserver.removeOnWindowFocusChangeListener(focusListener)
         displayManager.unregisterDisplayListener(displayListener)
         presentation?.dismiss()
         presentation = null
@@ -90,7 +114,14 @@ class ExternalInfoDisplayController(private val activity: ComponentActivity) {
     }
 
     private fun refresh() {
-        val display = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION).firstOrNull()
+        val currentDisplay = ContextCompat.getDisplayOrDefault(activity)
+        val display = if (activity.hasWindowFocus()) {
+            val occupied = gameDisplays.value.orEmpty().values
+            displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION).firstOrNull { target ->
+                target.displayId != currentDisplay.displayId && target.isValid && target.state != Display.STATE_OFF &&
+                    occupied.none { target.displayId in it }
+            }
+        } else null
         if (display == null) {
             presentation?.dismiss()
             presentation = null

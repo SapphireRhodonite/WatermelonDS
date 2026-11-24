@@ -92,6 +92,12 @@
             android:exported="false">
         </activity>
         <activity
+            android:name=".ui.emulator.render.GamePanelActivity"
+            android:taskAffinity="${applicationId}.game_panel"
+            android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen"
+            android:excludeFromRecents="true"
+            android:exported="false" />
+        <activity
             android:name=".ui.emulator.EmulatorActivity"
             android:theme="@style/EmulatorTheme"
             android:configChanges="keyboardHidden|orientation|screenSize|screenLayout|smallestScreenSize|keyboard|uiMode"

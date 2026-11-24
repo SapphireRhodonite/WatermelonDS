@@ -5,6 +5,7 @@ import android.hardware.display.DisplayManager
 import android.view.Display
 import androidx.core.content.ContextCompat
 import androidx.core.content.getSystemService
+import me.magnum.melonds.impl.layout.devicemapper.isBuiltInPanel
 import javax.inject.Inject
 
 class SecondaryDisplaySelector @Inject constructor() {
@@ -16,17 +17,21 @@ class SecondaryDisplaySelector @Inject constructor() {
         )
     }
 
-    fun getSecondaryDisplay(context: Context): Display? {
+    fun getSecondaryDisplay(context: Context, canHostGamePanel: (Display) -> Boolean = { false }): Display? {
         val currentDisplay = ContextCompat.getDisplayOrDefault(context)
         return context.getSystemService<DisplayManager>()?.let { displayManager ->
             val presentationDisplays = displayManager.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION)
-            displayManager.displays.firstOrNull { display ->
-                (display.displayId != Display.DEFAULT_DISPLAY || presentationDisplays.any { it.displayId == display.displayId }) &&
-                    display.displayId != currentDisplay.displayId &&
-                    display.name !in ExcludedDisplays &&
-                    display.state != Display.STATE_OFF &&
-                    display.isValid
+            val candidates = displayManager.displays.filter { display ->
+                display.displayId != currentDisplay.displayId && display.name !in ExcludedDisplays &&
+                    display.state != Display.STATE_OFF && display.isValid
             }
+            fun acceptsPresentation(display: Display) =
+                display.displayId != Display.DEFAULT_DISPLAY || presentationDisplays.any { it.displayId == display.displayId }
+
+            val builtInPartner = if (currentDisplay.isBuiltInPanel()) candidates.firstOrNull {
+                it.isBuiltInPanel() && (acceptsPresentation(it) || canHostGamePanel(it))
+            } else null
+            builtInPartner ?: candidates.firstOrNull(::acceptsPresentation)
         }
     }
 }

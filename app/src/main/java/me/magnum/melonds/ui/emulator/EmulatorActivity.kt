@@ -106,6 +106,7 @@ import me.magnum.melonds.impl.ShaderCompatibilityLog
 import me.magnum.melonds.impl.ShaderCompileTimeStore
 import me.magnum.melonds.impl.emulator.LifecycleOwnerProvider
 import me.magnum.melonds.impl.emulator.debug.RendererDebugBridge
+import me.magnum.melonds.domain.model.layout.LayoutDisplay
 import me.magnum.melonds.impl.layout.DeviceLayoutDisplayMapper
 import me.magnum.melonds.impl.layout.SecondaryDisplaySelector
 import me.magnum.melonds.impl.system.AppForegroundStateObserver
@@ -113,6 +114,7 @@ import me.magnum.melonds.parcelables.RomInfoParcelable
 import me.magnum.melonds.parcelables.RomParcelable
 import me.magnum.melonds.ui.cheats.CheatsActivity
 import me.magnum.melonds.ui.romlist.RomListActivity
+import me.magnum.melonds.ui.common.ExternalInfoDisplayController
 import me.magnum.melonds.ui.common.rom.EmulatorLaunchValidatorDelegate
 import me.magnum.melonds.ui.emulator.component.EmulatorOverlayTracker
 import me.magnum.melonds.ui.emulator.component.RaPendingExitContext
@@ -146,6 +148,7 @@ import me.magnum.melonds.ui.emulator.model.VulkanCompileProgress
 import me.magnum.melonds.ui.emulator.model.VulkanPresentationConfig
 import me.magnum.melonds.ui.emulator.render.ChoreographerFrameRenderer
 import me.magnum.melonds.ui.emulator.render.ChoreographerFrameRendererFactory
+import me.magnum.melonds.ui.emulator.render.GamePanelActivity
 import me.magnum.melonds.ui.emulator.render.ExternalPresentation
 import me.magnum.melonds.ui.emulator.render.FrameRenderCoordinator
 import me.magnum.melonds.ui.emulator.render.OpenGlFrameRenderCoordinator
@@ -247,6 +250,7 @@ open class EmulatorActivity : AppCompatActivity() {
     lateinit var boxArtRepository: me.magnum.melonds.ui.romlist.boxart.BoxArtRepository
 
     private var presentation: ExternalPresentation? = null
+    private var gameDisplayOwner: Any? = null
     private var phantomPlayerResumed = false
 
     private lateinit var handler: Handler
@@ -1624,6 +1628,7 @@ open class EmulatorActivity : AppCompatActivity() {
         if (isClosingEmulator) {
             return
         }
+        if (PhantomPlayer.current == null) gameDisplayOwner = Any()
         updateDisplays()
         getSystemService<DisplayManager>()?.registerDisplayListener(displayListener, null)
         getSystemService<InputManager>()?.registerInputDeviceListener(connectedControllerManager, null)
@@ -1636,16 +1641,24 @@ open class EmulatorActivity : AppCompatActivity() {
             return
         }
         val currentDisplay = ContextCompat.getDisplayOrDefault(this)
-        val secondaryDisplay = secondaryDisplaySelector.getSecondaryDisplay(this)
-            .takeIf { externalDisplayMode == ExternalDisplayMode.MELON_DUAL_DS }
+        val secondaryDisplay = secondaryDisplaySelector.getSecondaryDisplay(this) {
+            PhantomPlayer.current == null && GamePanelActivity.canOpen(this, it)
+        }.takeIf { externalDisplayMode == ExternalDisplayMode.MELON_DUAL_DS }
 
         val displays = deviceLayoutDisplayMapper.mapDisplaysToLayoutDisplays(currentDisplay, secondaryDisplay)
         viewModel.setConnectedDisplays(displays)
 
-        showExternalDisplay(secondaryDisplay.takeIf { PhantomPlayer.current == null || phantomPlayerResumed })
+        val usePanelActivity = PhantomPlayer.current == null && currentDisplay.displayId == Display.DEFAULT_DISPLAY &&
+            displays.mainScreenDisplay.type == LayoutDisplay.Type.BUILT_IN &&
+            displays.secondaryScreenDisplay?.type == LayoutDisplay.Type.BUILT_IN
+        showExternalDisplay(secondaryDisplay.takeIf { PhantomPlayer.current == null || phantomPlayerResumed }, usePanelActivity)
+        gameDisplayOwner?.let { owner ->
+            val occupied = setOfNotNull(currentDisplay.displayId, presentation?.display?.displayId)
+            ExternalInfoDisplayController.setGameDisplays(owner, occupied)
+        }
     }
 
-    private fun showExternalDisplay(secondaryDisplay: Display?) {
+    private fun showExternalDisplay(secondaryDisplay: Display?, usePanelActivity: Boolean = false) {
         if (isClosingEmulator) {
             return
         }
@@ -1661,6 +1674,7 @@ open class EmulatorActivity : AppCompatActivity() {
                 context = this,
                 display = secondaryDisplay,
                 frameRenderCoordinator = frameRenderCoordinator,
+                usePanelActivity = usePanelActivity,
                 excludeTouchScreenFromSystemGestures = excludeTouchScreenFromSystemGestures,
             ).apply {
                 layoutView.apply {
@@ -1686,7 +1700,11 @@ open class EmulatorActivity : AppCompatActivity() {
                     setPauseOverlayVisibility(true)
                 }
 
-                show()
+            }.takeIf { it.showOnDisplay() }
+            if (presentation == null) {
+                val primary = ContextCompat.getDisplayOrDefault(this)
+                viewModel.setConnectedDisplays(deviceLayoutDisplayMapper.mapDisplaysToLayoutDisplays(primary, null))
+                return
             }
             if (showBootAnimation.value) {
                 showBootAnimationOnExternalDisplay()
@@ -4187,6 +4205,9 @@ open class EmulatorActivity : AppCompatActivity() {
 
     override fun onStop() {
         super.onStop()
+        showExternalDisplay(null)
+        gameDisplayOwner?.let { ExternalInfoDisplayController.setGameDisplays(it, emptySet()) }
+        gameDisplayOwner = null
         cancelStartupPresentationRefreshes()
         getSystemService<DisplayManager>()?.unregisterDisplayListener(displayListener)
         getSystemService<InputManager>()?.unregisterInputDeviceListener(connectedControllerManager)
