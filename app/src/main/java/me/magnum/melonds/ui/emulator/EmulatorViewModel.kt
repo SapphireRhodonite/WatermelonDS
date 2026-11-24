@@ -124,6 +124,7 @@ import me.magnum.melonds.domain.repositories.BackgroundRepository
 import me.magnum.melonds.domain.repositories.CheatsRepository
 import me.magnum.melonds.domain.repositories.LayoutsRepository
 import me.magnum.melonds.domain.repositories.RetroAchievementsRepository
+import me.magnum.melonds.domain.repositories.FrontendRomLookup
 import me.magnum.melonds.domain.repositories.RomsRepository
 import me.magnum.melonds.domain.repositories.SaveStatesRepository
 import me.magnum.melonds.domain.repositories.SettingsRepository
@@ -203,7 +204,6 @@ import me.magnum.melonds.ui.emulator.model.VulkanCompileProgress
 import me.magnum.melonds.ui.emulator.rewind.model.RewindSaveState
 import me.magnum.melonds.ui.emulator.rom.RomPauseMenuOption
 import me.magnum.melonds.utils.EventSharedFlow
-import me.magnum.melonds.utils.FileUtils
 import me.magnum.rcheevosapi.exception.UserTokenExpiredException
 import me.magnum.rcheevosapi.model.RAAchievement
 import me.magnum.rcheevosapi.model.RAAchievementSet
@@ -647,24 +647,13 @@ class EmulatorViewModel @Inject constructor(
             return args is LaunchArgs.Firmware && args.resumes(currentState.console)
         }
         val running = currentState as? EmulatorState.RunningRom ?: return false
-        val requestedUri = when (args) {
+        val matchedUri = when (args) {
             is LaunchArgs.RomObject -> args.rom.uri
-            is LaunchArgs.RomUri -> args.uri
-            is LaunchArgs.RomPath -> null
+            is LaunchArgs.RomUri -> (romsRepository.getFrontendRomAtUri(args.uri) as? FrontendRomLookup.Found)?.rom?.uri
+            is LaunchArgs.RomPath -> (romsRepository.getFrontendRomAtPath(args.path) as? FrontendRomLookup.Found)?.rom?.uri
             is LaunchArgs.Firmware -> return false
         }
-        if (requestedUri == running.rom.uri) return true
-
-        val sameFile = withContext(Dispatchers.IO) {
-            val requestedPath = if (args is LaunchArgs.RomPath) {
-                args.path
-            } else {
-                requestedUri?.let { FileUtils.getAbsolutePathFromSingleUri(context, it) }
-            }
-            requestedPath != null && requestedPath.startsWith("/") &&
-                requestedPath == FileUtils.getAbsolutePathFromSingleUri(context, running.rom.uri)
-        }
-        return sameFile && _emulatorState.value === running
+        return matchedUri == running.rom.uri && _emulatorState.value === running
     }
 
     fun relaunchWithNewArgs(args: LaunchArgs) {
@@ -742,8 +731,10 @@ class EmulatorViewModel @Inject constructor(
     }
 
     fun onRomLaunchValidated(rom: Rom) {
+        val validation = _emulatorState.value as? EmulatorState.ValidatingRom ?: return
+        if (validation.rom.uri != rom.uri) return
         sessionCoroutineScope.launch {
-            launchRom(rom)
+            if (_emulatorState.value === validation) launchRom(rom, validation.saveDirectory)
         }
     }
 
@@ -756,8 +747,8 @@ class EmulatorViewModel @Inject constructor(
     private fun launchEmulator(args: LaunchArgs) {
         when (args) {
             is LaunchArgs.RomObject -> loadRom(args.rom)
-            is LaunchArgs.RomUri -> loadRom(args.uri)
-            is LaunchArgs.RomPath -> loadRom(args.path)
+            is LaunchArgs.RomUri -> loadFrontendRom { romsRepository.getFrontendRomAtUri(args.uri) }
+            is LaunchArgs.RomPath -> loadFrontendRom { romsRepository.getFrontendRomAtPath(args.path) }
             is LaunchArgs.Firmware -> _emulatorState.value = EmulatorState.ValidatingFirmware(args.consoleType)
         }
     }
@@ -780,35 +771,39 @@ class EmulatorViewModel @Inject constructor(
         return romsRepository.getRomAtUri(rom.uri) ?: rom.takeUnless { it.metadataPending }
     }
 
-    private fun loadRom(romUri: Uri) {
+    private fun loadFrontendRom(resolve: suspend () -> FrontendRomLookup) {
         viewModelScope.launch {
             resetEmulatorState(EmulatorState.LoadingRom())
             sessionCoroutineScope.launch {
-                val rom = romsRepository.getRomAtUri(romUri)
-                if (rom != null) {
-                    _emulatorState.value = EmulatorState.ValidatingRom(rom)
-                } else {
-                    _emulatorState.value = EmulatorState.RomNotFoundError(romUri.toString())
-                }
+                _emulatorState.value = frontendRomLaunchState(resolve())
             }
         }
     }
 
-    private fun loadRom(romPath: String) {
-        viewModelScope.launch {
-            resetEmulatorState(EmulatorState.LoadingRom())
-            sessionCoroutineScope.launch {
-                val rom = romsRepository.getRomAtPath(romPath)
-                if (rom != null) {
-                    _emulatorState.value = EmulatorState.ValidatingRom(rom)
+    private fun frontendRomLaunchState(lookup: FrontendRomLookup): EmulatorState {
+        val message = when (lookup) {
+            is FrontendRomLookup.Found -> {
+                val saveDirectory = if (settingsRepository.saveNextToRomFile()) {
+                    lookup.rom.parentTreeUri
                 } else {
-                    _emulatorState.value = EmulatorState.RomNotFoundError(romPath)
+                    settingsRepository.getSaveFileDirectory()
                 }
+                if (saveDirectory != null) return EmulatorState.ValidatingRom(lookup.rom, saveDirectory)
+                context.getString(R.string.frontend_save_missing_directory)
             }
+            is FrontendRomLookup.NameNotFound -> {
+                val directories = lookup.searchedDirectories.joinToString("\n").ifEmpty {
+                    context.getString(R.string.frontend_no_readable_rom_folders)
+                }
+                context.getString(R.string.frontend_rom_name_not_found, lookup.name, directories)
+            }
+            is FrontendRomLookup.AmbiguousName -> context.getString(R.string.frontend_rom_name_ambiguous, lookup.name)
+            FrontendRomLookup.UnverifiedLocation -> context.getString(R.string.frontend_rom_unverified_location)
         }
+        return EmulatorState.FrontendSaveSelectionRequired(message)
     }
 
-    private suspend fun launchRom(rom: Rom) = coroutineScope {
+    private suspend fun launchRom(rom: Rom, saveDirectory: Uri?) = coroutineScope {
         try {
             _emulatorState.value = EmulatorState.LoadingRom()
             currentRom = rom
@@ -878,7 +873,7 @@ class EmulatorViewModel @Inject constructor(
 
             val cheats = getRomInfo(rom)?.let { getRomEnabledCheats(it) } ?: emptyList()
             confirmRetroArchShaderCompile(rom.config)
-            val result = emulatorManager.loadRom(rom, cheats)
+            val result = emulatorManager.loadRom(rom, cheats, saveDirectory)
             when (result) {
                 is RomLaunchResult.LaunchFailedRomNotFound,
                 is RomLaunchResult.LaunchFailedRomNotSupported,

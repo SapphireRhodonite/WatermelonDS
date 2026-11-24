@@ -21,7 +21,7 @@ interface EmulatorManager {
 
     val emulatorEvents: Flow<EmulatorEvent>
 
-    suspend fun loadRom(rom: Rom, cheats: List<Cheat>): RomLaunchResult
+    suspend fun loadRom(rom: Rom, cheats: List<Cheat>, saveDirectory: Uri? = null): RomLaunchResult
 
     suspend fun loadFirmware(consoleType: ConsoleType, dsiProfile: me.magnum.melonds.domain.model.DSiProfile? = null): FirmwareLaunchResult
 

@@ -35,6 +35,13 @@
     
     <string name="error_rom_not_found">No se pudo encontrar la ROM</string>
     <string name="error_rom_not_found_info">No se ha encontrado la ROM seleccionada. Asegúrate de que la ROM seleccionada se encuentre en el directorio de búsqueda de la ROM actual.\n%1$s</string>
+    <string name="frontend_save_selection_title">No se pudo abrir el juego desde el frontend</string>
+    <string name="frontend_rom_name_not_found">Ninguna ROM accesible en la biblioteca tiene el nombre de archivo exacto «%1$s».\n\nCarpetas de ROM consultadas:\n%2$s</string>
+    <string name="frontend_no_readable_rom_folders">No hay carpetas de ROM configuradas que se puedan leer.</string>
+    <string name="frontend_rom_name_ambiguous">Hay más de una ROM llamada «%1$s» en la biblioteca. Configura el frontend para que envíe la ruta completa de la copia que quieres abrir.</string>
+    <string name="frontend_rom_unverified_location">WatermelonDS no pudo comprobar que el archivo esté en una carpeta de ROM configurada y accesible. Revisa tus carpetas de ROM y envía la ruta completa o un documento de una de esas carpetas.</string>
+    <string name="frontend_save_missing_directory">Elige una carpeta de guardados en Ajustes → Archivos de guardado o activa Guardar junto a la ROM.</string>
+    <string name="frontend_save_open_library">Abrir biblioteca</string>
     <string name="error_load_rom">No se pudo cargar la ROM</string>
     <string name="error_load_rom_message">Hubo un problema cargando la ROM. Asegúrate de que no esté dañada e inténtalo de nuevo.</string>
     <string name="error_load_firmware">No se pudo cargar el firmware.</string>

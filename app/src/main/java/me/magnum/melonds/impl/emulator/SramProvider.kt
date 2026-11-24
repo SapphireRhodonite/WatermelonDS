@@ -13,17 +13,16 @@ class SramProvider(
     private val uriHandler: UriHandler,
     private val contentResolver: ContentResolver,
 ) {
-
     @Throws(SramLoadException::class)
-    fun getSramForRom(rom: Rom): Uri {
-        val rootDirUri = settingsRepository.getSaveFileDirectory(rom)
+    fun getSramForRom(rom: Rom, saveDirectory: Uri? = null): Uri {
+        val rootDirUri = saveDirectory ?: settingsRepository.getSaveFileDirectory(rom)
 
         val rootDocument = uriHandler.getUriTreeDocument(rootDirUri) ?: throw SramLoadException("Cannot create root document: $rootDirUri")
         val romDocument = uriHandler.getUriDocument(rom.uri)
 
         val romFileName = romDocument?.name ?: throw SramLoadException("Cannot determine SRAM file name: ${romDocument?.uri}")
-        val saveExtension = if (settingsRepository.useSrmExtensionForSaveFiles()) "srm" else "sav"
-        val sramFileName = romFileName.replaceAfterLast('.', saveExtension, "$romFileName.$saveExtension")
+        val extension = if (settingsRepository.useSrmExtensionForSaveFiles()) "srm" else "sav"
+        val sramFileName = romFileName.replaceAfterLast('.', extension, "$romFileName.$extension")
         Log.i("SramProvider", "resolved save file '$sramFileName' for rom='${rom.name}'")
 
         val sramUri = rootDocument.findChildUri(contentResolver, sramFileName)

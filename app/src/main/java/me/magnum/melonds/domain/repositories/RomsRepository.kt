@@ -16,8 +16,9 @@ interface RomsRepository {
     fun getRoms(): Flow<List<Rom>>
     fun getRomScanningStatus(): StateFlow<RomScanningStatus>
     fun observeRomDirectoryScanStatuses(): Flow<List<RomDirectoryScanStatus>>
-    suspend fun getRomAtPath(path: String): Rom?
     suspend fun getRomAtUri(uri: Uri): Rom?
+    suspend fun getFrontendRomAtPath(path: String): FrontendRomLookup
+    suspend fun getFrontendRomAtUri(uri: Uri): FrontendRomLookup
 
     fun updateCartridge(rom: Rom, cartridge: CartridgeId?)
     fun updateRomConfig(rom: Rom, romConfig: RomConfig): Deferred<Unit>
@@ -26,4 +27,11 @@ interface RomsRepository {
     fun setRomFavorite(rom: Rom, favorite: Boolean)
     fun rescanRoms()
     fun invalidateRoms()
+}
+
+sealed interface FrontendRomLookup {
+    data class Found(val rom: Rom) : FrontendRomLookup
+    data class NameNotFound(val name: String, val searchedDirectories: List<String>) : FrontendRomLookup
+    data class AmbiguousName(val name: String) : FrontendRomLookup
+    data object UnverifiedLocation : FrontendRomLookup
 }

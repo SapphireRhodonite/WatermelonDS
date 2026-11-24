@@ -112,6 +112,7 @@ import me.magnum.melonds.impl.system.AppForegroundStateObserver
 import me.magnum.melonds.parcelables.RomInfoParcelable
 import me.magnum.melonds.parcelables.RomParcelable
 import me.magnum.melonds.ui.cheats.CheatsActivity
+import me.magnum.melonds.ui.romlist.RomListActivity
 import me.magnum.melonds.ui.common.rom.EmulatorLaunchValidatorDelegate
 import me.magnum.melonds.ui.emulator.component.EmulatorOverlayTracker
 import me.magnum.melonds.ui.emulator.component.RaPendingExitContext
@@ -1287,7 +1288,8 @@ open class EmulatorActivity : AppCompatActivity() {
                                 viewModel.resumeEmulator()
                             }
                         }
-                        is EmulatorState.RomLoadError -> {
+                        is EmulatorState.RomLoadError,
+                        is EmulatorState.FrontendSaveSelectionRequired -> {
                             binding.viewLayoutControls.isInvisible = true
                             binding.textFps.isGone = true
                             binding.textRenderedIr.isGone = true
@@ -1296,7 +1298,11 @@ open class EmulatorActivity : AppCompatActivity() {
                             binding.textLoadingDetail.isGone = true
                             showBootAnimation.value = false
                             presentation?.setInfoOverlayContent(null)
-                            showRomLoadErrorDialog(it.reason)
+                            if (it is EmulatorState.FrontendSaveSelectionRequired) {
+                                showFrontendSaveSelectionDialog(it.message)
+                            } else if (it is EmulatorState.RomLoadError) {
+                                showRomLoadErrorDialog(it.reason)
+                            }
                         }
                         is EmulatorState.FirmwareLoadError -> {
                             binding.viewLayoutControls.isInvisible = true
@@ -4058,6 +4064,19 @@ open class EmulatorActivity : AppCompatActivity() {
                 dialog.dismiss()
                 finish()
             }
+            .show()
+    }
+
+    private fun showFrontendSaveSelectionDialog(message: String) {
+        activeOverlays.addActiveOverlay(EmulatorOverlay.ROM_LOAD_ERROR_DIALOG)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.frontend_save_selection_title)
+            .setMessage(message)
+            .setPositiveButton(R.string.frontend_save_open_library) { _, _ ->
+                startActivity(Intent(this, RomListActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP))
+            }
+            .setNegativeButton(R.string.cancel, null)
+            .setOnDismissListener { finish() }
             .show()
     }
 

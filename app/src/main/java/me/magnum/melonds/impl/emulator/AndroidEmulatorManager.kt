@@ -305,11 +305,11 @@ class AndroidEmulatorManager(
         }
     }
 
-    override suspend fun loadRom(rom: Rom, cheats: List<Cheat>): RomLaunchResult = withContext(Dispatchers.IO) {
+    override suspend fun loadRom(rom: Rom, cheats: List<Cheat>, saveDirectory: Uri?): RomLaunchResult = withContext(Dispatchers.IO) {
         if (!beginNandSession(rom.resolvedDsiProfile)) return@withContext RomLaunchResult.LaunchFailed(MelonEmulator.LoadResult.NDS_FAILED)
         var successful = false
         try {
-            val result = loadRomWithNandOwnership(rom, cheats)
+            val result = loadRomWithNandOwnership(rom, cheats, saveDirectory)
             synchronized(sessionControlLock) {
                 if (sessionStopRequested) return@withContext RomLaunchResult.LaunchFailed(MelonEmulator.LoadResult.NDS_FAILED)
                 successful = result is RomLaunchResult.LaunchSuccessful
@@ -320,7 +320,7 @@ class AndroidEmulatorManager(
         }
     }
 
-    private suspend fun loadRomWithNandOwnership(rom: Rom, cheats: List<Cheat>): RomLaunchResult {
+    private suspend fun loadRomWithNandOwnership(rom: Rom, cheats: List<Cheat>, saveDirectory: Uri?): RomLaunchResult {
         return withContext(Dispatchers.IO) {
             try {
                 if (rom.isInstalledDsiWareShortcut) {
@@ -331,7 +331,7 @@ class AndroidEmulatorManager(
                 val fileRomProcessor = romFileProcessorFactory.getFileRomProcessorForDocument(fileRomDocument)
                 val romUri = fileRomProcessor?.getRealRomUri(rom) ?: return@withContext RomLaunchResult.LaunchFailedRomNotSupported
                 val sram = try {
-                    PhantomPlayer.current?.save ?: sramProvider.getSramForRom(rom)
+                    PhantomPlayer.current?.save ?: sramProvider.getSramForRom(rom, saveDirectory)
                 } catch (exception: SramLoadException) {
                     return@withContext RomLaunchResult.LaunchFailedSramProblem(exception)
                 }

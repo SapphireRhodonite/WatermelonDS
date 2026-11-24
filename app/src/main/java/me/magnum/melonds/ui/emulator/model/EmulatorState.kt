@@ -1,12 +1,13 @@
 package me.magnum.melonds.ui.emulator.model
 
+import android.net.Uri
 import me.magnum.melonds.MelonEmulator
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.rom.Rom
 
 sealed class EmulatorState {
     data object Uninitialized : EmulatorState()
-    data class ValidatingRom(val rom: Rom) : EmulatorState()
+    data class ValidatingRom(val rom: Rom, val saveDirectory: Uri? = null) : EmulatorState()
     data class LoadingRom(
         val vulkanCompileProgress: VulkanCompileProgress? = null,
         val retroAchievementsLoadStage: RetroAchievementsLoadStage? = null,
@@ -21,6 +22,7 @@ sealed class EmulatorState {
     data class RomLoadError(val reason: String? = null) : EmulatorState()
     data class FirmwareLoadError(val reason: MelonEmulator.FirmwareLoadResult) : EmulatorState()
     data class RomNotFoundError(val romPath: String) : EmulatorState()
+    data class FrontendSaveSelectionRequired(val message: String) : EmulatorState()
 
     fun isRunning() = this is RunningRom || this is RunningFirmware
 }

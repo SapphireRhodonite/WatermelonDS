@@ -43,6 +43,7 @@ import me.magnum.melonds.common.uridelegates.UriHandler
 import me.magnum.melonds.domain.model.RomScanningStatus
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.model.rom.config.RomConfig
+import me.magnum.melonds.domain.repositories.FrontendRomLookup
 import me.magnum.melonds.domain.repositories.RomsRepository
 import me.magnum.melonds.domain.repositories.SettingsRepository
 import me.magnum.melonds.impl.dtos.rom.RomConfigDto
@@ -206,32 +207,134 @@ class FileSystemRomsRepository(
         return directoryScanStatusFlow.asStateFlow()
     }
 
-    override suspend fun getRomAtPath(path: String): Rom? = withContext(Dispatchers.IO) {
+    override suspend fun getFrontendRomAtPath(path: String): FrontendRomLookup = withContext(Dispatchers.IO) {
         val file = File(path)
-        if (!file.isAbsolute) return@withContext null
-        val canonicalFile = try {
-            file.canonicalFile
-        } catch (_: java.io.IOException) {
-            file
+        if (file.isAbsolute) {
+            val canonicalFile = runCatching { file.canonicalFile }.getOrNull()
+                ?: return@withContext FrontendRomLookup.UnverifiedLocation
+            val storageDocumentId = FileUtils.getExternalStorageDocumentId(context, canonicalFile)
+            return@withContext findFrontendDocument(storageDocumentId) { findIndexedRomAtPath(canonicalFile, it) }
         }
-        val documentId = FileUtils.getExternalStorageDocumentId(context, canonicalFile)
-        val allRoms = getRoms().first()
-        val indexed = documentId?.let { id ->
-            allRoms.find { it.uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY && it.uri.lastPathSegment == id }
+        if (path.isEmpty() || file.name != path || '\\' in path || path == "." || path == "..") {
+            return@withContext FrontendRomLookup.UnverifiedLocation
         }
-        val match = indexed ?: allRoms.find { rom ->
-            if (rom.uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY &&
-                rom.fileName.isNotEmpty() && rom.fileName != file.name) return@find false
-            FileUtils.getAbsolutePathFromSAFUri(context, rom.uri) == path
+        val library = frontendLibrary(waitForScan = true)
+        val matches = library.roms.filter { it.fileName == path }
+        when {
+            matches.isEmpty() -> FrontendRomLookup.NameNotFound(path, library.directories.map(::frontendDirectoryLabel))
+            matches.size > 1 -> FrontendRomLookup.AmbiguousName(path)
+            else -> prepareFrontendRom(matches.single())
         }
-        match?.let { prepareRomForUse(it) }
     }
 
-    override suspend fun getRomAtUri(uri: Uri): Rom? {
+    override suspend fun getFrontendRomAtUri(uri: Uri): FrontendRomLookup = withContext(Dispatchers.IO) {
+        val incomingDocumentId = documentId(uri)
+        val descriptorFile by lazy {
+            FileUtils.getAbsolutePathFromSingleUri(context, uri)
+                ?.takeIf { it.startsWith("/") && !it.endsWith(" (deleted)") }
+                ?.let { runCatching { File(it).canonicalFile }.getOrNull() }
+                ?.takeIf { FileUtils.getExternalStorageDocumentId(context, it) != null }
+        }
+        findFrontendDocument(incomingDocumentId.takeIf { uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY }) { candidates ->
+            candidates.firstOrNull { it.uri == uri }
+                ?: incomingDocumentId?.let { id ->
+                    candidates.firstOrNull { it.uri.authority == uri.authority && documentId(it.uri) == id }
+                }
+                ?: descriptorFile?.let { findIndexedRomAtPath(it, candidates) }
+        }
+    }
+
+    private data class FrontendLibrary(val directories: List<Uri>, val roms: List<Rom>)
+
+    private suspend fun frontendLibrary(waitForScan: Boolean): FrontendLibrary {
+        getRoms().first()
+        if (waitForScan) scanningStatusSubject.first { it == RomScanningStatus.NOT_SCANNING }
+        val directories = settingsRepository.getRomSearchDirectories().filter { directory ->
+            hasPersistedReadPermission(directory) &&
+                runCatching { uriHandler.getUriTreeDocument(directory)?.canRead() == true }.getOrDefault(false)
+        }
+        val roots = directories.mapNotNullTo(HashSet(), ::treeRoot)
+        val entries = romSnapshot().filter { rom ->
+            val root = rom.parentTreeUri?.let(::treeRoot)
+            root != null && root in roots && treeRoot(rom.uri) == root
+        }
+        return FrontendLibrary(directories, entries)
+    }
+
+    private fun treeRoot(uri: Uri): Uri? {
+        if (uri.scheme != "content") return null
+        val authority = uri.authority ?: return null
+        return runCatching {
+            DocumentsContract.buildTreeDocumentUri(authority, DocumentsContract.getTreeDocumentId(uri))
+        }.getOrNull()
+    }
+
+    private fun documentId(uri: Uri): String? =
+        runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
+
+    private fun frontendDirectoryLabel(uri: Uri): String {
+        if (uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY) {
+            FileUtils.getAbsolutePathFromSAFUri(context, uri)?.let { return it }
+        }
+        return runCatching { uriHandler.getUriTreeDocument(uri)?.name }.getOrNull() ?: uri.toString()
+    }
+
+    private suspend fun findFrontendDocument(
+        storageDocumentId: String?,
+        find: (List<Rom>) -> Rom?,
+    ): FrontendRomLookup {
+        var library = frontendLibrary(waitForScan = false)
+        var rom = find(library.roms)
+        if (rom == null && scanningStatusSubject.value == RomScanningStatus.SCANNING) {
+            library = frontendLibrary(waitForScan = true)
+            rom = find(library.roms)
+        }
+        val resolved = rom ?: storageDocumentId?.let { readRomInConfiguredTree(it, library.directories) }
+            ?: return FrontendRomLookup.UnverifiedLocation
+        return prepareFrontendRom(resolved)
+    }
+
+    private fun readRomInConfiguredTree(documentId: String, directories: List<Uri>): Rom? {
+        val volume = documentId.substringBefore(':', "")
+        val relativePath = documentId.substringAfter(':', "")
+        if (volume.isEmpty() || relativePath.split('/').any { it.isEmpty() || it == "." || it == ".." }) return null
+
+        val directory = directories.firstOrNull { root ->
+            if (root.authority != EXTERNAL_STORAGE_PROVIDER_AUTHORITY) return@firstOrNull false
+            val rootId = runCatching { DocumentsContract.getTreeDocumentId(root) }.getOrNull() ?: return@firstOrNull false
+            val prefix = if (rootId.endsWith(':')) rootId else "$rootId/"
+            documentId.startsWith(prefix)
+        } ?: return null
+        val uri = DocumentsContract.buildDocumentUriUsingTree(directory, documentId)
+        val parentId = "$volume:${relativePath.substringBeforeLast('/', "")}"
+        val parentUri = DocumentsContract.buildDocumentUriUsingTree(directory, parentId)
+        val document = uriHandler.getUriDocument(uri)?.takeIf { it.isFile && it.canRead() } ?: return null
+        return romFileProcessorFactory.getFileRomProcessorForDocument(document)?.getRomFromUri(uri, parentUri)
+    }
+
+    private fun findIndexedRomAtPath(file: File, candidates: List<Rom>): Rom? {
+        val storageDocumentId = FileUtils.getExternalStorageDocumentId(context, file)
+        val indexed = storageDocumentId?.let { id ->
+            candidates.firstOrNull { it.uri.authority == EXTERNAL_STORAGE_PROVIDER_AUTHORITY && documentId(it.uri) == id }
+        }
+        return indexed ?: candidates.firstOrNull { rom ->
+            rom.fileName == file.name && FileUtils.getAbsolutePathFromSingleUri(context, rom.uri) == file.path
+        }
+    }
+
+    private suspend fun prepareFrontendRom(rom: Rom): FrontendRomLookup {
+        val readable = runCatching {
+            context.contentResolver.openFileDescriptor(rom.uri, "r")?.use { true } ?: false
+        }.getOrDefault(false)
+        if (!readable) return FrontendRomLookup.UnverifiedLocation
+        return prepareRomForUse(rom)?.let { FrontendRomLookup.Found(it) } ?: FrontendRomLookup.UnverifiedLocation
+    }
+
+    override suspend fun getRomAtUri(uri: Uri): Rom? = withContext(Dispatchers.IO) {
         val allRoms = getRoms().first()
 
         // Quick exact URI match first (no filename needed)
-        allRoms.find { rom -> rom.uri == uri }?.let { return prepareRomForUse(it) }
+        allRoms.find { rom -> rom.uri == uri }?.let { return@withContext prepareRomForUse(it) }
 
         // Pre-filter by filename for performance
         val incomingFileName = DocumentFile.fromSingleUri(context, uri)?.name
@@ -241,26 +344,20 @@ class FileSystemRomsRepository(
             allRoms
         }
 
-        val cachedRom = findRomByPath(candidateRoms, uri)
+        val path = FileUtils.getAbsolutePathFromSingleUri(context, uri)
+        val cachedRom = path?.let { requestedPath ->
+            candidateRoms.firstOrNull { candidate -> FileUtils.getAbsolutePathFromSingleUri(context, candidate.uri) == requestedPath }
+        }
 
         if (cachedRom != null)
-            return prepareRomForUse(cachedRom)
+            return@withContext prepareRomForUse(cachedRom)
 
         // ROM is not known. Create a new ROM from the URI
-        return withContext(Dispatchers.IO) {
-            romFileProcessorFactory.getFileRomProcessorForDocument(uri)
-                ?.getRomFromUri(uri, null)
-                ?.let { rom ->
-                    applyRestoredRomMetadata(rom, readRomOptionsConfig(rom))
-                }
-        }
-    }
-
-    private fun findRomByPath(roms: List<Rom>, uri: Uri): Rom? {
-        val incomingPath = FileUtils.getAbsolutePathFromSingleUri(context, uri) ?: return null
-        return roms.find { rom ->
-            FileUtils.getAbsolutePathFromSingleUri(context, rom.uri) == incomingPath
-        }
+        romFileProcessorFactory.getFileRomProcessorForDocument(uri)
+            ?.getRomFromUri(uri, null)
+            ?.let { rom ->
+                applyRestoredRomMetadata(rom, readRomOptionsConfig(rom))
+            }
     }
 
     private fun replaceCartridge(rom: Rom, cartridge: CartridgeId?): Boolean = synchronized(roms) {

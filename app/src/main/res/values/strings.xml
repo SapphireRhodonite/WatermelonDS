@@ -40,6 +40,13 @@
     <string name="error_rom_not_found">Could not find ROM</string>
     <string name="rom_metadata_unavailable">Could not read this game. Check that the file is accessible and contains a valid DS ROM.</string>
     <string name="error_rom_not_found_info">The ROM you have selected has not been found. Make sure the selected ROM can be found in the current ROM search directory.\n%1$s</string>
+    <string name="frontend_save_selection_title">Could not launch game from frontend</string>
+    <string name="frontend_rom_name_not_found">No accessible ROM in the library has the exact file name “%1$s”.\n\nROM folders searched:\n%2$s</string>
+    <string name="frontend_no_readable_rom_folders">No configured ROM folder is readable.</string>
+    <string name="frontend_rom_name_ambiguous">More than one ROM in the library is named “%1$s”. Configure your frontend to send the full path to the copy you want to open.</string>
+    <string name="frontend_rom_unverified_location">WatermelonDS could not verify the file in a configured, accessible ROM folder. Check your ROM folders and send the full path or a document from one of those folders.</string>
+    <string name="frontend_save_missing_directory">Choose a save file directory in Settings → Save Files, or enable Save next to ROM file.</string>
+    <string name="frontend_save_open_library">Open library</string>
     <string name="error_load_rom">Could not load ROM</string>
     <string name="error_load_rom_message">There was a problem loading the ROM. Make sure it\'s not corrupted and try again.</string>
     <string name="error_load_firmware">Could not load the firmware</string>
