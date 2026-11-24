@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -55,6 +56,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -95,89 +97,114 @@ fun MultiplayerJoin(
         }
     }
     val library by viewModel.roms.collectAsState()
-    Column(Modifier.fillMaxSize()) {
-        MultiplayerHeader(stringResource(R.string.mp_join_title), onBack = onBack)
-        Column(Modifier.weight(1f).padding(start = 16.dp, end = 16.dp, top = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Row(Modifier.height(70.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    (0 until 4).forEach { index ->
-                        val char = code.getOrNull(index)
-                        val active = index == code.length
-                        Box(
-                            Modifier.size(width = 54.dp, height = 70.dp).clip(RoundedCornerShape(10.dp))
-                                .background(when {
-                                    active -> tileColor(colors, false, true)
-                                    char != null -> colors.surface2
-                                    else -> colors.text.copy(alpha = 0.04f)
-                                })
-                                .border(if (active) 2.dp else 1.dp, if (active) colors.red else colors.text.copy(alpha = if (char != null) 0.13f else 0.08f),
-                                    RoundedCornerShape(10.dp)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(char?.toString().orEmpty(), color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 34.sp)
-                        }
-                    }
-                }
-                if (found != null) {
-                    LaunchedEffect(found.key) {
-                        withFrameNanos { }
-                        runCatching { foundFocus.requestFocus() }
-                    }
-                    val (meta, tint) = roomMeta(found)
-                    Pressable(onClick = { onJoin(found) }, modifier = Modifier.weight(1f).fillMaxHeight().focusRequester(foundFocus),
-                        background = tileColor(colors, false, true), selected = true, border = null) {
-                        Row(Modifier.fillMaxSize().padding(start = 6.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            GameArt(matchRom(library.asSequence(), found.game), roomTitle(found), Modifier.size(62.dp, 55.dp).clip(RoundedCornerShape(6.dp)), initials = 18.sp)
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text(stringResource(R.string.mp_room_of, found.host.nickname), color = colors.text, fontFamily = SpaceGrotesk,
-                                        fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false))
-                                    AppBadge(found.app)
-                                }
-                                Mono(listOfNotNull(meta.substringBefore(" · "), roomTitle(found).takeIf { it.isNotEmpty() }?.uppercase(),
-                                    meta.substringAfter(" · ")).joinToString(" · "), color = tint, size = 10.sp, spacing = 0.5.sp)
-                            }
-                            Row(Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).background(colors.red).padding(horizontal = 16.dp),
-                                verticalAlignment = Alignment.CenterVertically) {
-                                Text(stringResource(R.string.mp_enter), color = Color.White, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                            }
-                        }
-                    }
-                } else {
-                    val complete = code.length == 4
-                    Box(Modifier.weight(1f).fillMaxHeight().clip(RoundedCornerShape(10.dp)).background(colors.text.copy(alpha = 0.04f))
-                        .drawBehind {
-                            drawRoundRect(colors.text.copy(alpha = 0.25f), cornerRadius = CornerRadius(10.dp.toPx()),
-                                style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))))
-                        }.padding(horizontal = 14.dp), contentAlignment = Alignment.CenterStart) {
-                        Mono(stringResource(if (complete) R.string.mp_code_missing else R.string.mp_code_hint).uppercase(),
-                            color = if (complete) colors.goldText else colors.text3, size = 11.sp, spacing = 1.sp, lines = 2)
-                    }
-                }
-            }
-            LazyVerticalGrid(GridCells.Fixed(if (wide) 11 else 8), horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                items(MultiplayerRoom.CODE_ALPHABET.toList()) { char ->
-                    Pressable(
-                        onClick = { code = if (code.length < 4) code + char else char.toString() },
-                        modifier = Modifier.height(44.dp).let { if (char == '2') it.focusRequester(keyFocus) else it },
-                        shape = RoundedCornerShape(8.dp),
-                        background = tileColor(colors, false, false),
-                        border = null,
-                    ) {
-                        Text(char.toString(), color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, fontSize = 19.sp,
-                            modifier = Modifier.align(Alignment.Center))
-                    }
+    val compact = LocalMultiplayerCompact.current
+    val slots: @Composable () -> Unit = {
+        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            (0 until 4).forEach { index ->
+                val char = code.getOrNull(index)
+                val active = index == code.length
+                Box(
+                    Modifier.size(width = 54.dp, height = if (compact) 62.dp else 70.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(when {
+                            active -> tileColor(colors, false, true)
+                            char != null -> colors.surface2
+                            else -> colors.text.copy(alpha = 0.04f)
+                        })
+                        .border(if (active) 2.dp else 1.dp, if (active) colors.red else colors.text.copy(alpha = if (char != null) 0.13f else 0.08f),
+                            RoundedCornerShape(10.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(char?.toString().orEmpty(), color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 34.sp)
                 }
             }
         }
-        MultiplayerFooter {
-            Hint("A", stringResource(R.string.mp_hint_type))
-            Hint("X", stringResource(R.string.mp_hint_erase))
-            Grow()
+    }
+    val result: @Composable (Modifier) -> Unit = { modifier ->
+        if (found != null) {
+            LaunchedEffect(found.key) {
+                withFrameNanos { }
+                runCatching { foundFocus.requestFocus() }
+            }
+            val (meta, tint) = roomMeta(found)
+            Pressable(onClick = { onJoin(found) }, modifier = modifier.focusRequester(foundFocus),
+                background = tileColor(colors, false, true), selected = true, border = null) {
+                Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 8.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GameArt(matchRom(library.asSequence(), found.game), roomTitle(found), Modifier.size(62.dp, 55.dp).clip(RoundedCornerShape(6.dp)), initials = 18.sp)
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        FlowRow(itemVerticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(stringResource(R.string.mp_room_of, found.host.nickname), color = colors.text, fontFamily = SpaceGrotesk,
+                                fontWeight = FontWeight.Bold, fontSize = 15.sp, maxLines = if (compact) Int.MAX_VALUE else 1,
+                                overflow = TextOverflow.Ellipsis)
+                            AppBadge(found.app)
+                        }
+                        Mono(listOfNotNull(meta.substringBefore(" · "), roomTitle(found).takeIf { it.isNotEmpty() }?.uppercase(),
+                            meta.substringAfter(" · ")).joinToString(" · "), color = tint, size = 10.sp, spacing = 0.5.sp,
+                            lines = if (compact) Int.MAX_VALUE else 1)
+                    }
+                    if (!compact) {
+                        Row(Modifier.height(40.dp).clip(RoundedCornerShape(20.dp)).background(colors.red).padding(horizontal = 16.dp),
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Text(stringResource(R.string.mp_enter), color = Color.White, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                    }
+                }
+            }
+        } else {
+            val complete = code.length == 4
+            Box(modifier.clip(RoundedCornerShape(10.dp)).background(colors.text.copy(alpha = 0.04f))
+                .drawBehind {
+                    drawRoundRect(colors.text.copy(alpha = 0.25f), cornerRadius = CornerRadius(10.dp.toPx()),
+                        style = Stroke(1.dp.toPx(), pathEffect = PathEffect.dashPathEffect(floatArrayOf(5.dp.toPx(), 4.dp.toPx()))))
+                }.padding(horizontal = 14.dp, vertical = if (compact) 10.dp else 0.dp), contentAlignment = Alignment.CenterStart) {
+                Mono(stringResource(if (complete) R.string.mp_code_missing else R.string.mp_code_hint).uppercase(),
+                    color = if (complete) colors.goldText else colors.text3, size = 11.sp, spacing = 1.sp,
+                    lines = if (compact) Int.MAX_VALUE else 2)
+            }
+        }
+    }
+    val key: @Composable (Char, Modifier) -> Unit = { char, modifier ->
+        Pressable(
+            onClick = { code = if (code.length < 4) code + char else char.toString() },
+            modifier = modifier.let { if (char == '2') it.focusRequester(keyFocus) else it },
+            shape = RoundedCornerShape(8.dp),
+            background = tileColor(colors, false, false),
+            border = null,
+        ) {
+            Text(char.toString(), color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, fontSize = 19.sp,
+                modifier = Modifier.align(Alignment.Center))
+        }
+    }
+    Column(Modifier.fillMaxSize()) {
+        MultiplayerHeader(stringResource(R.string.mp_join_title), onBack = onBack)
+        Column(Modifier.weight(1f).then(if (compact) Modifier.verticalScroll(rememberScrollState()) else Modifier)
+            .padding(start = 16.dp, end = 16.dp, top = 14.dp, bottom = if (compact) 12.dp else 0.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            if (compact) {
+                slots()
+                result(Modifier.fillMaxWidth().heightIn(min = 48.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    MultiplayerRoom.CODE_ALPHABET.forEach { char -> key(char, Modifier.size(48.dp)) }
+                }
+            } else {
+                Row(Modifier.height(70.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    slots()
+                    result(Modifier.weight(1f).fillMaxHeight())
+                }
+                LazyVerticalGrid(GridCells.Fixed(if (wide) 11 else 8), horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    items(MultiplayerRoom.CODE_ALPHABET.toList()) { char -> key(char, Modifier.height(44.dp)) }
+                }
+            }
+        }
+        MultiplayerFooter(actions = {
+            if (compact) PillButton(stringResource(R.string.mp_hint_erase), { code = code.dropLast(1) }, enabled = code.isNotEmpty(), key = "X")
             PillButton(stringResource(R.string.mp_enter), { enter() }, enabled = found != null, key = "START")
+        }) {
+            Hint("A", stringResource(R.string.mp_hint_type))
+            if (!compact) Hint("X", stringResource(R.string.mp_hint_erase))
         }
     }
 }
@@ -264,7 +291,7 @@ fun MultiplayerProfileScreen(viewModel: MultiplayerViewModel, pad: SharedFlow<In
         Hint("B", stringResource(R.string.multiplayer_back))
     }
     BoxWithConstraints(Modifier.fillMaxSize()) {
-        val compact = maxWidth < 560.dp
+        val compact = LocalMultiplayerCompact.current
         CompositionLocalProvider(LocalMultiplayerInteractive provides (picker == 0)) {
             Column(Modifier.fillMaxSize()) {
                 MultiplayerHeader(stringResource(R.string.mp_profile_title), onBack = onBack) {
@@ -292,8 +319,9 @@ fun MultiplayerProfileScreen(viewModel: MultiplayerViewModel, pad: SharedFlow<In
                         }
                         ProfileField(stringResource(R.string.mp_name), draft.nickname, { draft = draft.copy(nickname = it.take(MultiplayerProfile.NICKNAME_LENGTH)) })
                         ProfileField(stringResource(R.string.mp_message), draft.message, { draft = draft.copy(message = it.take(MultiplayerProfile.MESSAGE_LENGTH)) })
-                        MenuTile({ picker = 2 }, Modifier.fillMaxWidth().height(50.dp).focusRequester(birthdayFocus), label = stringResource(R.string.mp_birthday)) {
-                            Mono(stringResource(R.string.mp_birthday).uppercase(), Modifier.width(74.dp), size = 10.sp)
+                        MenuTile({ picker = 2 }, Modifier.fillMaxWidth().heightIn(min = 50.dp).focusRequester(birthdayFocus), label = stringResource(R.string.mp_birthday)) {
+                            Mono(stringResource(R.string.mp_birthday).uppercase(), Modifier.width(74.dp), size = 10.sp,
+                                lines = if (compact) Int.MAX_VALUE else 1)
                             TileTitle(stringResource(R.string.mp_birthday_value, draft.birthdayDay, months[draft.birthdayMonth - 1]), Modifier.weight(1f), size = 15.sp)
                         }
                     }
@@ -302,11 +330,13 @@ fun MultiplayerProfileScreen(viewModel: MultiplayerViewModel, pad: SharedFlow<In
                             Mono(stringResource(R.string.mp_colour).uppercase())
                             Mono(colourNames[draft.colour].uppercase(), color = colors.text)
                         }
-                        (0 until 2).forEach { row ->
+                        val colorsPerRow = if (compact) 4 else 8
+                        DsPalette.indices.chunked(colorsPerRow).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                (row * 8 until row * 8 + 8).forEach { index ->
+                                row.forEach { index ->
                                     Pressable(onClick = { draft = draft.copy(colour = index) },
-                                        modifier = Modifier.weight(1f).height(36.dp).let { if (index == stored.colour) it.focusRequester(focus) else it },
+                                        modifier = Modifier.weight(1f).height(if (compact) 48.dp else 36.dp)
+                                            .let { if (index == stored.colour) it.focusRequester(focus) else it },
                                         shape = RoundedCornerShape(8.dp), background = DsPalette[index], selected = index == draft.colour,
                                         border = colors.text.copy(alpha = 0.13f), label = colourNames[index]) {
                                         if (index == draft.colour) Box(Modifier.fillMaxSize().padding(2.dp).border(2.dp, Color.White, RoundedCornerShape(6.dp)))
@@ -318,9 +348,10 @@ fun MultiplayerProfileScreen(viewModel: MultiplayerViewModel, pad: SharedFlow<In
                             Mono(stringResource(R.string.mp_symbol).uppercase())
                             Mono(symbolNames[MultiplayerProfile.SYMBOLS.indexOf(draft.symbol).coerceAtLeast(0)].uppercase(), color = colors.text)
                         }
-                        (0 until 2).forEach { row ->
+                        val symbolsPerRow = if (compact) 4 else 6
+                        MultiplayerProfile.SYMBOLS.indices.chunked(symbolsPerRow).forEach { row ->
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                (row * 6 until row * 6 + 6).forEach { index ->
+                                row.forEach { index ->
                                     val symbol = MultiplayerProfile.SYMBOLS[index]
                                     Pressable(onClick = { draft = draft.copy(symbol = symbol) }, modifier = Modifier.weight(1f).height(54.dp),
                                         background = tileColor(colors, false, symbol == draft.symbol), selected = symbol == draft.symbol, border = null,
@@ -335,7 +366,8 @@ fun MultiplayerProfileScreen(viewModel: MultiplayerViewModel, pad: SharedFlow<In
                             }
                         }
                         Text(stringResource(if (room != null) R.string.mp_profile_room_note else R.string.mp_profile_firmware_note), color = colors.text3,
-                            fontSize = 13.sp, lineHeight = 17.sp, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+                            fontSize = 13.sp, lineHeight = 17.sp, maxLines = if (compact) Int.MAX_VALUE else 2,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
                     }
                     if (compact) {
                         FlowRow(
@@ -345,10 +377,10 @@ fun MultiplayerProfileScreen(viewModel: MultiplayerViewModel, pad: SharedFlow<In
                         ) { profileHint() }
                     }
                 }
-                MultiplayerFooter {
-                    if (!compact) profileHint()
-                    Grow()
+                MultiplayerFooter(actions = {
                     PillButton(stringResource(R.string.mp_save), { save() }, enabled = draft.nickname.isNotBlank(), key = "START")
+                }) {
+                    if (!compact) profileHint()
                 }
             }
         }
@@ -385,8 +417,8 @@ private fun ProfileField(label: String, value: String, onChange: (String) -> Uni
             runCatching { field.requestFocus() }
         }
     } else {
-        MenuTile({ editing = true }, Modifier.fillMaxWidth().height(50.dp).focusRequester(button), label = label) {
-            Mono(label.uppercase(), Modifier.width(74.dp), size = 10.sp)
+        MenuTile({ editing = true }, Modifier.fillMaxWidth().heightIn(min = 50.dp).focusRequester(button), label = label) {
+            Mono(label.uppercase(), Modifier.width(74.dp), size = 10.sp, lines = if (LocalMultiplayerCompact.current) Int.MAX_VALUE else 1)
             TileTitle(value, Modifier.weight(1f), size = 15.sp)
         }
         LaunchedEffect(restore) {
@@ -402,6 +434,7 @@ private fun ProfileField(label: String, value: String, onChange: (String) -> Uni
 @Composable
 private fun PickerOverlay(title: String, options: List<String>, selected: Int, columns: Int, onPick: (Int) -> Unit, onDismiss: () -> Unit) {
     val colors = watermelon
+    val compact = LocalMultiplayerCompact.current
     val focus = remember { FocusRequester() }
     LaunchedEffect(options) {
         withFrameNanos { }
@@ -409,14 +442,36 @@ private fun PickerOverlay(title: String, options: List<String>, selected: Int, c
     }
     MultiplayerSheet(onDismiss) {
         Text(title, color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 21.sp, letterSpacing = (-0.3).sp)
-        options.chunked(columns).forEachIndexed { row, chunk ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                chunk.forEachIndexed { column, label ->
-                    val index = row * columns + column
-                    MenuTile({ onPick(index) },
-                        Modifier.width(if (columns > 4) 58.dp else 150.dp).height(42.dp).let { if (index == selected) it.focusRequester(focus) else it },
-                        selected = index == selected) {
-                        TileTitle(label, size = 15.sp)
+        val item: @Composable (Int, Modifier) -> Unit = { index, modifier ->
+            MenuTile({ onPick(index) }, modifier.let { if (index == selected) it.focusRequester(focus) else it },
+                selected = index == selected) {
+                TileTitle(options[index], size = 15.sp)
+            }
+        }
+        if (compact) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                options.indices.forEach { index ->
+                    Pressable(
+                        onClick = { onPick(index) },
+                        modifier = Modifier.width(if (columns > 4) 48.dp else 124.dp).heightIn(min = 48.dp)
+                            .let { if (index == selected) it.focusRequester(focus) else it },
+                        background = tileColor(colors, false, index == selected),
+                        selected = index == selected,
+                        border = null,
+                    ) {
+                        Text(
+                            options[index], Modifier.align(Alignment.Center).padding(horizontal = 6.dp, vertical = 4.dp),
+                            color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold,
+                            fontSize = 15.sp, textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
+        } else {
+            options.indices.chunked(columns).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { index ->
+                        item(index, Modifier.width(if (columns > 4) 58.dp else 150.dp).height(42.dp))
                     }
                 }
             }

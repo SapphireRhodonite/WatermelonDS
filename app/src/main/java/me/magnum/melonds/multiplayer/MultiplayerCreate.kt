@@ -30,6 +30,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
@@ -40,18 +41,25 @@ import me.magnum.melonds.ui.theme.WatermelonMono
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -112,11 +120,12 @@ fun MultiplayerCreate(
     onDone: () -> Unit,
     onBack: () -> Unit,
 ) {
-    val colors = watermelon
+    val compact = LocalMultiplayerCompact.current
     val roms by viewModel.roms.collectAsState()
     val bios by viewModel.bios.collectAsState()
     val busy by viewModel.busy.collectAsState()
     val failure by viewModel.failure.collectAsState()
+    val failureMessage = (failure as? MultiplayerViewModel.Failure.Message)?.let { stringResource(it.text) }
     val current = viewModel.room.collectAsState().value?.info
     var play by rememberSaveable { mutableStateOf(current?.play ?: MultiplayerRoom.Play.ROM) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
@@ -153,6 +162,9 @@ fun MultiplayerCreate(
         selected = ordered.first { letterOf(it) == nextLetter }.uri.toString()
     }
     val last = index == steps.lastIndex
+    val stepLabel = stringResource(R.string.mp_step_mode).let {
+        if (steps.size > 1) "${index + 1}/${steps.size} · $it" else it
+    }
 
     fun finish() {
         if (!canFinish || busy) return
@@ -178,6 +190,7 @@ fun MultiplayerCreate(
 
     val uriHandler = LocalUriHandler.current
     var searchFocused by remember(step) { mutableStateOf(false) }
+    val keyboardVisible = compact && step == 1 && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     BackHandler { back() }
     val padAction by rememberUpdatedState<(Int) -> Unit> { key ->
         when (key) {
@@ -192,14 +205,21 @@ fun MultiplayerCreate(
         MultiplayerHeader(
             title = stringResource(if (step == 0) R.string.mp_create_title else if (play == MultiplayerRoom.Play.DOWNLOAD) R.string.mp_play_download else R.string.mp_play_rom),
             onBack = { back() },
+            tags = {
+                if (compact && step == 0) Mono(stepLabel, size = 11.sp)
+            },
         ) {
-            if (step == 0) {
-                Mono(if (steps.size > 1) "${index + 1}/${steps.size} · ${stringResource(R.string.mp_step_mode)}" else stringResource(R.string.mp_step_mode),
-                    size = 11.sp)
-            } else {
+            if (!compact && step == 0) {
+                Mono(stepLabel, size = 11.sp)
+            } else if (!compact) {
                 SearchField(query, { query = it }, eligible.size, searchFocused,
                     Modifier.width(214.dp).onFocusChanged { searchFocused = it.isFocused })
             }
+        }
+        if (compact && step == 1) {
+            SearchField(query, { query = it }, eligible.size, searchFocused,
+                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+                    .onFocusChanged { searchFocused = it.isFocused })
         }
         Box(Modifier.weight(1f).fillMaxWidth()) {
             when (step) {
@@ -207,6 +227,8 @@ fun MultiplayerCreate(
                     if (it == play) next() else play = it
                 }
                 else -> GameStep(shown, rom, filter, wide, query.isNotBlank(), searchFocused, catalog, play, showAll,
+                    showFilters = !keyboardVisible,
+                    failureMessage = failureMessage.takeIf { compact },
                     onShowAll = { showAll = !showAll; filter = 0; query = "" },
                     onFilter = { filter = it; query = "" },
                     onFocusGame = { viewModel.focus.value = MultiplayerFocus.Game(it, play) },
@@ -215,22 +237,11 @@ fun MultiplayerCreate(
                 }
             }
         }
-        failure?.let { value ->
-            if (value is MultiplayerViewModel.Failure.Message) {
-                Text(stringResource(value.text), color = colors.goldText, fontSize = 14.sp, lineHeight = 19.sp,
-                    modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp))
-            }
+        if (failureMessage != null && (!compact || step != 1)) {
+            CreateFailure(failureMessage, Modifier.padding(horizontal = 18.dp, vertical = 6.dp))
         }
-        MultiplayerFooter {
-            if (step == 0) {
-                Hint("A", stringResource(R.string.mp_hint_choose_next))
-                Hint("B", stringResource(R.string.multiplayer_back))
-            } else {
-                Hint("A", stringResource(R.string.mp_hint_choose))
-                Hint("L R", stringResource(R.string.mp_hint_letter))
-            }
-            Grow()
-            if (step == 1) {
+        MultiplayerFooter(actions = {
+            if (step == 1 && !keyboardVisible) {
                 FilterChip("GameTDB", false) { uriHandler.openUri("https://www.gametdb.com/DS") }
             }
             PillButton(
@@ -239,6 +250,14 @@ fun MultiplayerCreate(
                 enabled = !busy && (step != 1 || rom != null),
                 key = "START",
             )
+        }) {
+            if (step == 0) {
+                Hint("A", stringResource(R.string.mp_hint_choose_next))
+                Hint("B", stringResource(R.string.multiplayer_back))
+            } else if (!keyboardVisible) {
+                Hint("A", stringResource(R.string.mp_hint_choose))
+                Hint("L R", stringResource(R.string.mp_hint_letter))
+            }
         }
     }
 }
@@ -270,7 +289,8 @@ private fun SearchField(query: String, onQuery: (String) -> Unit, total: Int, fo
             },
         decorationBox = { inner ->
             Row(
-                Modifier.height(38.dp).clip(RoundedCornerShape(19.dp)).background(colors.surface2)
+                Modifier.heightIn(min = if (LocalMultiplayerCompact.current) 48.dp else 38.dp)
+                    .clip(RoundedCornerShape(19.dp)).background(colors.surface2)
                     .border(if (focused) 2.dp else 0.dp, if (focused) colors.red else Color.Transparent, RoundedCornerShape(19.dp))
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -293,8 +313,9 @@ private fun ModeStep(play: MultiplayerRoom.Play, bios: Boolean, onBios: () -> Un
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
     val chatLocked = !bios
-    Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        Column(Modifier.width(300.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    val compact = LocalMultiplayerCompact.current
+    val modes: @Composable (Modifier) -> Unit = { modifier ->
+        Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Mono(stringResource(R.string.mp_how_play).trimEnd('?', '¿').trimStart('¿').uppercase(), Modifier.padding(start = 2.dp, bottom = 2.dp))
             listOf(
                 Triple(MultiplayerRoom.Play.ROM, Icons.Filled.SportsEsports, R.string.mp_play_rom),
@@ -304,7 +325,7 @@ private fun ModeStep(play: MultiplayerRoom.Play, bios: Boolean, onBios: () -> Un
                 val locked = mode == MultiplayerRoom.Play.CHAT && chatLocked
                 MenuTile(
                     onClick = { if (locked) onBios() else onPick(mode) },
-                    modifier = Modifier.fillMaxWidth().height(56.dp).let { if (mode == play) it.focusRequester(focus) else it }
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).let { if (mode == play) it.focusRequester(focus) else it }
                         .onFocusChanged { if (it.isFocused) onFocusMode(mode, locked) },
                     selected = mode == play && !locked,
                     dim = locked,
@@ -319,12 +340,22 @@ private fun ModeStep(play: MultiplayerRoom.Play, bios: Boolean, onBios: () -> Un
                 }
             }
         }
+    }
+    val description: @Composable (Modifier) -> Unit = { modifier ->
         val locked = play == MultiplayerRoom.Play.CHAT && chatLocked
-        Column(Modifier.weight(1f).fillMaxHeight().panel(colors).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Mono(stringResource(R.string.mp_each_needs))
-            Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally)) {
-                (0 until 3).forEach { index -> ConsoleNeed(play, index) }
+        Column(modifier.panel(colors).padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Mono(stringResource(R.string.mp_each_needs), lines = if (compact) Int.MAX_VALUE else 1)
+            if (compact) {
+                FlowRow(Modifier.fillMaxWidth(), itemVerticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    repeat(3) { ConsoleNeed(play, it) }
+                }
+            } else {
+                Row(Modifier.weight(1f).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally)) {
+                    repeat(3) { ConsoleNeed(play, it) }
+                }
             }
             Text(
                 stringResource(when (play) {
@@ -341,8 +372,21 @@ private fun ModeStep(play: MultiplayerRoom.Play, bios: Boolean, onBios: () -> Un
                     play == MultiplayerRoom.Play.DOWNLOAD -> R.string.mp_meta_download
                     else -> R.string.mp_meta_chat
                 }).uppercase(),
-                color = if (locked) colors.goldText else colors.text2, size = 11.sp, spacing = 0.5.sp, lines = 2,
+                color = if (locked) colors.goldText else colors.text2, size = 11.sp, spacing = 0.5.sp, lines = if (compact) Int.MAX_VALUE else 2,
             )
+        }
+    }
+    if (compact) {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            modes(Modifier.fillMaxWidth())
+            description(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 12.dp),
+            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            modes(Modifier.width(300.dp))
+            description(Modifier.weight(1f).fillMaxHeight())
         }
     }
 }
@@ -385,6 +429,11 @@ internal fun ConsoleNeed(play: MultiplayerRoom.Play, index: Int) {
 }
 
 @Composable
+private fun CreateFailure(message: String, modifier: Modifier) {
+    Text(message, color = watermelon.goldText, fontSize = 14.sp, lineHeight = 19.sp, modifier = modifier)
+}
+
+@Composable
 private fun GameStep(
     shown: List<Rom>,
     rom: Rom?,
@@ -395,6 +444,8 @@ private fun GameStep(
     catalog: MultiplayerCatalog?,
     play: MultiplayerRoom.Play,
     showAll: Boolean,
+    showFilters: Boolean,
+    failureMessage: String?,
     onShowAll: () -> Unit,
     onFilter: (Int) -> Unit,
     onFocusGame: (Rom) -> Unit,
@@ -402,15 +453,19 @@ private fun GameStep(
 ) {
     val colors = watermelon
     val context = LocalContext.current
+    val compact = LocalMultiplayerCompact.current
     val focus = remember { FocusRequester() }
     val grid = rememberLazyGridState()
     val repeated = remember(shown) { shown.groupingBy { romDisplayName(it) }.eachCount().filterValues { it > 1 }.keys }
     val letters = remember(shown) { shown.mapNotNull { letterOf(it) }.distinct() }
     val current = rom?.let { letterOf(it) }
+    LaunchedEffect(failureMessage) {
+        if (failureMessage != null) grid.scrollToItem(0)
+    }
     LaunchedEffect(filter, rom?.uri, shown.size, searchFocused) {
         val index = shown.indexOfFirst { it.uri == rom?.uri }
         if (index >= 0) {
-            grid.scrollToItem(index)
+            grid.scrollToItem(index + if (failureMessage != null) 1 else 0)
             if (!searchFocused) {
                 withFrameNanos { }
                 runCatching { focus.requestFocus() }
@@ -418,14 +473,15 @@ private fun GameStep(
         }
     }
     Column(Modifier.fillMaxSize()) {
-        Row(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+        if (showFilters) FlowRow(Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp, bottom = 4.dp),
+            itemVerticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             listOf(0 to R.string.mp_filter_library, 1 to R.string.mp_filter_recent,
                 2 to R.string.mp_filter_favorites).forEach { (value, label) ->
                 FilterChip(stringResource(label).uppercase(), filter == value && !searching) { onFilter(value) }
             }
             FilterChip(stringResource(R.string.mp_show_all).uppercase(), showAll, onShowAll)
-            Grow()
+            if (!compact) Grow()
             Mono(
                 when {
                     searching -> pluralStringResource(R.plurals.mp_count_found, shown.size, shown.size)
@@ -446,15 +502,20 @@ private fun GameStep(
             Text(stringResource(emptyText), color = colors.text2, fontSize = 15.sp,
                 modifier = Modifier.padding(16.dp))
         }
-        Row(Modifier.weight(1f).padding(start = 16.dp, top = 8.dp)) {
+        Row(Modifier.weight(1f).padding(start = 16.dp, end = if (compact) 16.dp else 0.dp, top = 8.dp)) {
             LazyVerticalGrid(
                 state = grid,
-                columns = GridCells.Fixed(if (wide) 5 else 4),
+                columns = GridCells.Fixed(if (compact) 2 else if (wide) 5 else 4),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
                 contentPadding = PaddingValues(bottom = 8.dp),
                 modifier = Modifier.weight(1f),
             ) {
+                if (failureMessage != null) {
+                    item(key = "create-failure", span = { GridItemSpan(maxLineSpan) }) {
+                        CreateFailure(failureMessage, Modifier.fillMaxWidth().padding(vertical = 6.dp))
+                    }
+                }
                 items(shown, key = { it.uri.toString() }) { item ->
                     val on = item.uri == rom?.uri
                     val name = romDisplayName(item)
@@ -482,11 +543,14 @@ private fun GameStep(
                                 if (players >= 2) CapabilityBadge(players.toString(), people = true)
                                 if ((modes?.singleCard ?: 0) >= 2) CapabilityBadge("DL", people = false)
                             }
-                            Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()
-                                .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))))
-                                .padding(start = 8.dp, end = if (on) 32.dp else 8.dp, top = 16.dp, bottom = 7.dp)) {
-                                Text(name, marquee, color = Color.White, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 11.sp,
-                                    lineHeight = 13.sp, maxLines = 1, overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis)
+                            if (!compact) {
+                                Box(Modifier.align(Alignment.BottomStart).fillMaxWidth()
+                                    .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f))))
+                                    .padding(start = 8.dp, end = if (on) 32.dp else 8.dp, top = 16.dp, bottom = 7.dp)) {
+                                    Text(name, marquee, color = Color.White, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold,
+                                        fontSize = 11.sp, lineHeight = 13.sp, maxLines = 1,
+                                        overflow = if (focused) TextOverflow.Clip else TextOverflow.Ellipsis)
+                                }
                             }
                             if (on) {
                                 Box(Modifier.align(Alignment.BottomEnd).padding(6.dp).size(22.dp).clip(CircleShape).background(colors.red),
@@ -495,17 +559,24 @@ private fun GameStep(
                                 }
                             }
                         }
+                        if (compact) {
+                            Text(name, color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp, lineHeight = 16.sp)
+                        }
                         val detail = when {
                             name in repeated -> item.fileName
                             filter == 1 && item.lastPlayed != null -> context.getString(R.string.rom_last_played_format,
                                 DateUtils.getRelativeTimeSpanString(item.lastPlayed!!.time, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS))
                             else -> null
                         }
-                        detail?.let { Mono(it, marquee, color = if (on) colors.text else colors.text3, size = 10.sp, spacing = 0.sp) }
+                        detail?.let {
+                            Mono(it, if (compact) Modifier else marquee, color = if (on) colors.text else colors.text3, size = 10.sp,
+                                spacing = 0.sp, lines = if (compact) Int.MAX_VALUE else 1)
+                        }
                     }
                 }
             }
-            Column(Modifier.width(26.dp).padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally,
+            if (!compact) Column(Modifier.width(26.dp).padding(top = 2.dp), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(1.dp)) {
                 letters.forEach { letter ->
                     val on = letter == current
@@ -523,7 +594,8 @@ private fun GameStep(
 @Composable
 private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
     val colors = watermelon
-    Pressable(onClick = onClick, modifier = Modifier.height(28.dp), shape = RoundedCornerShape(14.dp),
+    Pressable(onClick = onClick, modifier = Modifier.heightIn(min = if (LocalMultiplayerCompact.current) 40.dp else 28.dp),
+        shape = RoundedCornerShape(14.dp),
         background = if (selected) colors.red else colors.surface2, border = null) {
         Text(label, color = if (selected) Color.White else colors.text2, fontFamily = SpaceGrotesk,
             fontWeight = FontWeight.Bold, fontSize = 11.sp, letterSpacing = 0.5.sp,

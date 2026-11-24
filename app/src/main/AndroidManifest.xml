@@ -138,6 +138,7 @@
         <activity
             android:name=".multiplayer.MultiplayerActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:parentActivityName=".ui.romlist.RomListActivity" />
         <activity
             android:name=".ui.dsiwaremanager.DSiWareManagerActivity"

@@ -10,11 +10,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.sizeIn
@@ -136,6 +138,7 @@ fun MultiplayerAvatar(profile: MultiplayerProfile, size: Dp, modifier: Modifier 
 }
 
 val LocalMultiplayerInteractive = compositionLocalOf { true }
+internal val LocalMultiplayerCompact = compositionLocalOf { false }
 
 @Composable
 fun Pressable(
@@ -237,7 +240,8 @@ fun Mono(
 
 @Composable
 fun TileTitle(text: String, modifier: Modifier = Modifier, color: Color = watermelon.text, size: TextUnit = 16.sp) {
-    Text(text, modifier, color = color, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, fontSize = size, maxLines = 1,
+    Text(text, modifier, color = color, fontFamily = SpaceGrotesk, fontWeight = FontWeight.SemiBold, fontSize = size,
+        maxLines = if (LocalMultiplayerCompact.current) Int.MAX_VALUE else 1,
         overflow = TextOverflow.Ellipsis)
 }
 
@@ -258,16 +262,22 @@ fun PillButton(
 ) {
     val colors = watermelon
     val active = enabled
+    val compact = LocalMultiplayerCompact.current
     Pressable(
         onClick = onClick,
-        modifier = modifier.height(height),
+        modifier = if (compact) modifier.heightIn(min = maxOf(48.dp, height)) else modifier.height(height),
         shape = RoundedCornerShape(height / 2),
         background = if (active) colors.red else colors.surface2,
         enabled = enabled,
         border = null,
     ) {
         Row(
-            Modifier.align(Alignment.Center).padding(start = if (key != null) 7.dp else 16.dp, end = 16.dp),
+            Modifier.align(Alignment.Center).padding(
+                start = if (key != null) 7.dp else 16.dp,
+                end = 16.dp,
+                top = if (compact) 6.dp else 0.dp,
+                bottom = if (compact) 6.dp else 0.dp,
+            ),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -278,7 +288,7 @@ fun PillButton(
                 fontFamily = SpaceGrotesk,
                 fontWeight = FontWeight.Bold,
                 fontSize = fontSize,
-                maxLines = 1,
+                maxLines = if (compact) Int.MAX_VALUE else 1,
             )
         }
     }
@@ -320,20 +330,49 @@ fun Hint(key: String, text: String) {
     val colors = watermelon
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
         KeyCap(key)
-        Text(text, color = colors.text3, fontFamily = WatermelonMono, fontSize = 12.sp, maxLines = 1)
+        Text(text, color = colors.text3, fontFamily = WatermelonMono, fontSize = 12.sp,
+            maxLines = if (LocalMultiplayerCompact.current) Int.MAX_VALUE else 1)
     }
 }
 
 @Composable
-fun MultiplayerFooter(centered: Boolean = false, content: @Composable RowScope.() -> Unit) {
+fun MultiplayerFooter(
+    centered: Boolean = false,
+    actions: (@Composable () -> Unit)? = null,
+    content: @Composable () -> Unit,
+) {
     val colors = watermelon
     Box(Modifier.fillMaxWidth().height(1.dp).background(colors.line))
-    Row(
-        Modifier.fillMaxWidth().height(56.dp).padding(start = 18.dp, end = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = if (centered) Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(18.dp),
-        content = content,
-    )
+    if (LocalMultiplayerCompact.current) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            FlowRow(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp, if (centered) Alignment.CenterHorizontally else Alignment.Start),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) { content() }
+            if (actions != null) {
+                FlowRow(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    itemVerticalAlignment = Alignment.CenterVertically,
+                ) { actions() }
+            }
+        }
+    } else {
+        Row(
+            Modifier.fillMaxWidth().height(56.dp).padding(start = 18.dp, end = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = if (centered) Arrangement.spacedBy(22.dp, Alignment.CenterHorizontally) else Arrangement.spacedBy(18.dp),
+        ) {
+            content()
+            if (actions != null) {
+                Grow()
+                actions()
+            }
+        }
+    }
 }
 
 @Composable
@@ -357,9 +396,11 @@ fun MultiplayerHeader(
     trailing: @Composable RowScope.() -> Unit = {},
 ) {
     val colors = watermelon
+    val compact = LocalMultiplayerCompact.current
     Column(modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().height(56.dp).padding(start = if (onBack != null) 8.dp else 18.dp, end = 16.dp),
+            Modifier.fillMaxWidth().then(if (compact) Modifier.heightIn(min = 56.dp) else Modifier.height(56.dp))
+                .padding(start = if (onBack != null) 8.dp else 18.dp, end = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
@@ -372,10 +413,17 @@ fun MultiplayerHeader(
             leading()
             Row(Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(title, color = colors.text, fontFamily = SpaceGrotesk, fontWeight = FontWeight.Bold, fontSize = 21.sp, letterSpacing = (-0.3).sp,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
-                tags()
+                    maxLines = if (compact) Int.MAX_VALUE else 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f, fill = false))
+                if (!compact) tags()
             }
             trailing()
+        }
+        if (compact) {
+            FlowRow(
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) { tags() }
         }
         Box(Modifier.fillMaxWidth().height(1.dp).background(colors.line))
     }
