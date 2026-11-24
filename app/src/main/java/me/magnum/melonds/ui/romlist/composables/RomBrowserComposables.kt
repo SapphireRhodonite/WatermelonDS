@@ -18,6 +18,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,7 +70,10 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -109,14 +114,14 @@ fun WatermelonLibraryHeader(
     val searchFocusRequester = remember { FocusRequester() }
 
     Column(modifier = modifier.fillMaxWidth().background(colors.bg)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(56.dp)
-                .padding(start = 18.dp, end = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            if (searchOpen) {
+        if (searchOpen) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .padding(start = 18.dp, end = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 IconButton(
                     onClick = {
                         searchOpen = false
@@ -159,67 +164,83 @@ fun WatermelonLibraryHeader(
                 ) {
                     Icon(Icons.Filled.Close, contentDescription = null, tint = colors.text2, modifier = Modifier.size(20.dp))
                 }
-            } else {
+            }
+        } else {
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(start = 18.dp, end = 6.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                itemVerticalAlignment = Alignment.CenterVertically,
+            ) {
                 val intro = LocalBrandIntroTarget.current
-                WatermelonMark(
-                    Modifier
-                        .onGloballyPositioned { intro?.bounds = it.boundsInRoot() }
-                        .alpha(if (intro == null) 1f else 0f),
-                    width = 38.dp,
-                )
-                Spacer(Modifier.width(10.dp))
-                Row(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.heightIn(min = 56.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    WatermelonMark(
+                        Modifier
+                            .onGloballyPositioned { intro?.bounds = it.boundsInRoot() }
+                            .alpha(if (intro == null) 1f else 0f),
+                        width = 38.dp,
+                    )
+                    Spacer(Modifier.width(10.dp))
                     Text(
-                        text = "Watermelon",
+                        text = buildAnnotatedString {
+                            append("Watermelon")
+                            withStyle(SpanStyle(color = colors.green)) { append("DS") }
+                        },
                         color = colors.text,
                         fontFamily = SpaceGrotesk,
                         fontSize = 21.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = (-0.3).sp,
-                    )
-                    Text(
-                        text = "DS",
-                        color = colors.green,
-                        fontFamily = SpaceGrotesk,
-                        fontSize = 21.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = (-0.3).sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
                     )
                 }
-                MultiplayerHeaderButton(onOpenMultiplayer)
-                Spacer(Modifier.width(4.dp))
-                IconButton(onClick = { searchOpen = true; onSearchQueryChanged("") }, modifier = Modifier.size(42.dp)) {
-                    Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.action_search_roms), tint = colors.text2, modifier = Modifier.size(22.dp))
-                }
-                IconButton(onClick = onToggleViewMode, modifier = Modifier.size(42.dp)) {
-                    Icon(
-                        imageVector = if (viewMode == RomViewMode.GRID) Icons.Filled.ViewList else Icons.Filled.GridView,
-                        contentDescription = stringResource(R.string.rom_view_toggle),
-                        tint = colors.text2,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                Box {
-                    IconButton(onClick = { overflowOpen = true }, modifier = Modifier.size(42.dp)) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = null, tint = colors.text2, modifier = Modifier.size(22.dp))
+                Box(
+                    modifier = Modifier.heightIn(min = 56.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.End,
+                        itemVerticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MultiplayerHeaderButton(onOpenMultiplayer)
+                        Spacer(Modifier.width(4.dp))
+                        IconButton(onClick = { searchOpen = true; onSearchQueryChanged("") }, modifier = Modifier.size(42.dp)) {
+                            Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.action_search_roms), tint = colors.text2, modifier = Modifier.size(22.dp))
+                        }
+                        IconButton(onClick = onToggleViewMode, modifier = Modifier.size(42.dp)) {
+                            Icon(
+                                imageVector = if (viewMode == RomViewMode.GRID) Icons.Filled.ViewList else Icons.Filled.GridView,
+                                contentDescription = stringResource(R.string.rom_view_toggle),
+                                tint = colors.text2,
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
+                        Box {
+                            IconButton(onClick = { overflowOpen = true }, modifier = Modifier.size(42.dp)) {
+                                Icon(Icons.Filled.MoreVert, contentDescription = null, tint = colors.text2, modifier = Modifier.size(22.dp))
+                            }
+                            DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
+                                DropdownMenuItem(onClick = { overflowOpen = false; onBootFirmwareDs() }) {
+                                    Text(stringResource(R.string.action_boot_firmware) + " · " + stringResource(R.string.console_ds))
+                                }
+                                DropdownMenuItem(onClick = { overflowOpen = false; onBootFirmwareDsi() }) {
+                                    Text(stringResource(R.string.action_boot_firmware) + " · " + stringResource(R.string.console_dsi))
+                                }
+                                DropdownMenuItem(onClick = { overflowOpen = false; onOpenDsiWareManager() }) {
+                                    Text(stringResource(R.string.dsiware_manager))
+                                }
+                                DropdownMenuItem(onClick = { overflowOpen = false; onRefresh() }) {
+                                    Text(stringResource(R.string.action_refresh_rom_list))
+                                }
+                            }
+                        }
+                        IconButton(onClick = onOpenSettings, modifier = Modifier.size(42.dp)) {
+                            Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.settings), tint = colors.text2, modifier = Modifier.size(22.dp))
+                        }
                     }
-                    DropdownMenu(expanded = overflowOpen, onDismissRequest = { overflowOpen = false }) {
-                        DropdownMenuItem(onClick = { overflowOpen = false; onBootFirmwareDs() }) {
-                            Text(stringResource(R.string.action_boot_firmware) + " · " + stringResource(R.string.console_ds))
-                        }
-                        DropdownMenuItem(onClick = { overflowOpen = false; onBootFirmwareDsi() }) {
-                            Text(stringResource(R.string.action_boot_firmware) + " · " + stringResource(R.string.console_dsi))
-                        }
-                        DropdownMenuItem(onClick = { overflowOpen = false; onOpenDsiWareManager() }) {
-                            Text(stringResource(R.string.dsiware_manager))
-                        }
-                        DropdownMenuItem(onClick = { overflowOpen = false; onRefresh() }) {
-                            Text(stringResource(R.string.action_refresh_rom_list))
-                        }
-                    }
-                }
-                IconButton(onClick = onOpenSettings, modifier = Modifier.size(42.dp)) {
-                    Icon(Icons.Filled.Tune, contentDescription = stringResource(R.string.settings), tint = colors.text2, modifier = Modifier.size(22.dp))
                 }
             }
         }
@@ -265,6 +286,8 @@ private fun MultiplayerHeaderButton(onClick: () -> Unit) {
             fontFamily = SpaceGrotesk,
             fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
     }
 }
