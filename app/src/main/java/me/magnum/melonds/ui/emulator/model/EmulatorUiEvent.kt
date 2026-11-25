@@ -1,5 +1,6 @@
 package me.magnum.melonds.ui.emulator.model
 
+import me.magnum.melonds.domain.model.layout.ScreenGap
 import me.magnum.melonds.domain.model.RomInfo
 import me.magnum.melonds.domain.model.SaveStateSlot
 import me.magnum.melonds.domain.model.VideoFiltering
@@ -27,6 +28,7 @@ sealed class EmulatorUiEvent {
     data object ShowAchievementList : EmulatorUiEvent()
     data object ShowPendingSubmissionsDialog : EmulatorUiEvent()
     data object CloseEmulator : EmulatorUiEvent()
+    data class ShowScreenGap(val current: ScreenGap) : EmulatorUiEvent()
     data object ShowDualScreenPresets : EmulatorUiEvent()
     data object ShowRendererDebugMenu : EmulatorUiEvent()
     data object ShowRenderer2DDebugControls : EmulatorUiEvent()

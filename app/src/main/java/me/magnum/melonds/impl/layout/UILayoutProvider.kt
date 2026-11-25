@@ -1,10 +1,13 @@
 package me.magnum.melonds.impl.layout
 
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
+import me.magnum.melonds.domain.model.layout.ScreenGap
 import me.magnum.melonds.domain.model.Point
 import me.magnum.melonds.domain.model.Rect
 import me.magnum.melonds.domain.model.layout.Insets
@@ -36,11 +39,11 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
 
     private val _currentLayoutConfiguration = MutableStateFlow<LayoutConfiguration?>(null)
 
-    val currentLayout = combine(_currentLayoutConfiguration, currentLayoutVariant) { layoutConfiguration, variant ->
+    fun currentLayout(screenGap: Flow<ScreenGap> = flowOf(ScreenGap.OFF)) = combine(_currentLayoutConfiguration, currentLayoutVariant, screenGap) { layoutConfiguration, variant, gap ->
         if (layoutConfiguration == null || variant == null) {
             null
         } else {
-            variant to getOptimalLayoutForVariant(layoutConfiguration, variant)
+            variant to getOptimalLayoutForVariant(layoutConfiguration, variant, gap)
         }
     }
 
@@ -68,7 +71,7 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
         _currentLayoutConfiguration.value = layoutConfiguration
     }
 
-    private fun getOptimalLayoutForVariant(layoutConfiguration: LayoutConfiguration, variant: UILayoutVariant): UILayout {
+    private fun getOptimalLayoutForVariant(layoutConfiguration: LayoutConfiguration, variant: UILayoutVariant, gap: ScreenGap): UILayout {
         val exactLayoutMatch = layoutConfiguration.layoutVariants[variant]
         if (exactLayoutMatch != null) {
             return populateLayoutIfRequired(exactLayoutMatch, variant)
@@ -79,7 +82,8 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
             return populateLayoutIfRequired(bestLayoutVariant, variant)
         }
 
-        return defaultLayoutProvider.buildDefaultLayout(variant)
+        val effectiveGap = if (variant.supportsScreenGap(layoutConfiguration.type)) gap else ScreenGap.OFF
+        return defaultLayoutProvider.buildDefaultLayout(variant, effectiveGap)
     }
 
     /**

@@ -9,4 +9,7 @@ data class UILayoutVariant(
     val orientation: Orientation,
     val folds: List<ScreenFold>,
     val displays: LayoutDisplayPair,
-)
+) {
+    fun supportsScreenGap(layoutType: LayoutConfiguration.LayoutType): Boolean =
+        layoutType == LayoutConfiguration.LayoutType.DEFAULT && displays.secondaryScreenDisplay == null && folds.isEmpty()
+}

@@ -10,4 +10,5 @@ data class RuntimeInputLayoutConfiguration(
     val isHapticFeedbackEnabled: Boolean,
     val layoutOrientation: LayoutConfiguration.LayoutOrientation,
     val layout: UILayout,
+    val supportsScreenGap: Boolean,
 )

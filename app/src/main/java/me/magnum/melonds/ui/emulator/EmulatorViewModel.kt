@@ -71,6 +71,7 @@ import me.magnum.melonds.common.retroachievements.RetroAchievementsEndpointStora
 import me.magnum.melonds.database.daos.RetroAchievementsDao
 import me.magnum.melonds.database.entities.retroachievements.RAUserAchievementEntity
 import me.magnum.melonds.debug.DebugCommandStateStore
+import me.magnum.melonds.domain.model.layout.ScreenGap
 import me.magnum.melonds.domain.model.Cheat
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.DualScreenPreset
@@ -440,7 +441,8 @@ class EmulatorViewModel @Inject constructor(
 
     private val _layout = MutableStateFlow<LayoutConfiguration?>(null)
 
-    private val _currentLayout = uiLayoutProvider.currentLayout.shareIn(viewModelScope, SharingStarted.Lazily)
+    private val screenGap = MutableStateFlow(settingsRepository.getScreenGap())
+    private val _currentLayout = uiLayoutProvider.currentLayout(screenGap).shareIn(viewModelScope, SharingStarted.Lazily)
 
     private val _runtimeLayout = MutableStateFlow<RuntimeInputLayoutConfiguration?>(null)
     val runtimeLayout = _runtimeLayout.asStateFlow()
@@ -1267,6 +1269,11 @@ class EmulatorViewModel @Inject constructor(
     fun setDualScreenPreset(preset: DualScreenPreset) {
         _dualScreenPreset.value = preset
         settingsRepository.setDualScreenPreset(preset)
+    }
+
+    fun setScreenGap(gap: ScreenGap) {
+        settingsRepository.setScreenGap(gap)
+        screenGap.value = gap
     }
 
     fun setDualScreenIntegerScaleEnabled(enabled: Boolean) {
@@ -2223,6 +2230,7 @@ class EmulatorViewModel @Inject constructor(
                     }
                     RomPauseMenuOption.VIEW_ACHIEVEMENTS -> _uiEvent.tryEmit(EmulatorUiEvent.ShowAchievementList)
                     RomPauseMenuOption.SYNC_RETRO_ACHIEVEMENTS -> syncPendingRaSubmissionsFromPauseMenu()
+                    RomPauseMenuOption.SCREEN_GAP -> _uiEvent.tryEmit(EmulatorUiEvent.ShowScreenGap(screenGap.value))
                     RomPauseMenuOption.PRESETS -> _uiEvent.tryEmit(EmulatorUiEvent.ShowDualScreenPresets)
                     RomPauseMenuOption.RENDERER_DEBUG -> _uiEvent.tryEmit(EmulatorUiEvent.ShowRendererDebugMenu)
                     RomPauseMenuOption.RESET -> resetEmulator()
@@ -2640,6 +2648,7 @@ class EmulatorViewModel @Inject constructor(
                         isHapticFeedbackEnabled = config.isHapticFeedbackEnabled,
                         layoutOrientation = currentLayoutConfiguration.orientation,
                         layout = adjustedLayout,
+                        supportsScreenGap = currentVariant.supportsScreenGap(currentLayoutConfiguration.type),
                     )
                 }
             }.collect(_runtimeLayout)
@@ -6483,6 +6492,7 @@ class EmulatorViewModel @Inject constructor(
             RomPauseMenuOption.CHEATS -> emulatorSession.areCheatsEnabled()
             RomPauseMenuOption.VIEW_ACHIEVEMENTS -> emulatorSession.isRetroAchievementsEnabledForSession()
             RomPauseMenuOption.SYNC_RETRO_ACHIEVEMENTS -> buildRaPendingSyncMenuState().isVisible
+            RomPauseMenuOption.SCREEN_GAP -> _runtimeLayout.value?.supportsScreenGap == true
             RomPauseMenuOption.RENDERER_DEBUG -> rendererDebugToolsEnabled
             else -> true
         }

@@ -82,6 +82,7 @@ import me.magnum.melonds.MelonEmulator
 import me.magnum.melonds.R
 import me.magnum.melonds.common.PermissionHandler
 import me.magnum.melonds.databinding.ActivityEmulatorBinding
+import me.magnum.melonds.domain.model.layout.ScreenGap
 import me.magnum.melonds.domain.model.ConsoleType
 import me.magnum.melonds.domain.model.ControllerConfiguration
 import me.magnum.melonds.domain.model.DualScreenPreset
@@ -1180,6 +1181,14 @@ open class EmulatorActivity : AppCompatActivity() {
                             activeOverlays.addActiveOverlay(EmulatorOverlay.PENDING_SUBMISSION_CONFIRM_EXIT)
                             showPendingSubmissionsDialog.value = true
                         }
+                        is EmulatorUiEvent.ShowScreenGap -> pushConsoleOverlay(
+                            ConsoleOverlayNode.Choice(
+                                title = getString(R.string.screen_gap),
+                                labels = resources.getStringArray(R.array.screen_gap_options).toList(),
+                                selectedIndex = it.current.ordinal,
+                                onSelect = { index -> viewModel.setScreenGap(ScreenGap.entries[index]) },
+                            ),
+                        )
                         EmulatorUiEvent.ShowDualScreenPresets -> {
                             activeOverlays.addActiveOverlay(EmulatorOverlay.PRESETS_DIALOG)
                             showDualScreenPresets.value = true

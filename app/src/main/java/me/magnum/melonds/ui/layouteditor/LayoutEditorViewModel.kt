@@ -101,7 +101,7 @@ class LayoutEditorViewModel @Inject constructor(
         }
 
         viewModelScope.launch {
-            uiLayoutProvider.currentLayout.collect {
+            uiLayoutProvider.currentLayout().collect {
                 if (it == null) {
                     _currentLayout.value = null
                 } else {

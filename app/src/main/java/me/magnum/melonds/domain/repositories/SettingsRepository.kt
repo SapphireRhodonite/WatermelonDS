@@ -3,6 +3,7 @@ package me.magnum.melonds.domain.repositories
 import android.net.Uri
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import me.magnum.melonds.domain.model.layout.ScreenGap
 import me.magnum.melonds.domain.model.FrameskipConfiguration
 import me.magnum.melonds.domain.model.*
 import me.magnum.melonds.domain.model.camera.DSiCameraSourceType
@@ -105,6 +106,8 @@ interface SettingsRepository {
     fun isExternalDisplayKeepAspectRationEnabled(): Boolean
     fun observeExternalDisplayKeepAspectRationEnabled(): Flow<Boolean>
 
+    fun getScreenGap(): ScreenGap
+    fun setScreenGap(gap: ScreenGap)
     fun getDualScreenPreset(): DualScreenPreset
     fun observeDualScreenPreset(): Flow<DualScreenPreset>
     fun isDualScreenIntegerScaleEnabled(): Boolean

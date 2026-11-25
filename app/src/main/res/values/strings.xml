@@ -1212,4 +1212,11 @@
     <string name="video_vulkan_driver_import_other_gpu">Install a Vulkan driver ZIP built for your GPU. If the driver cannot be opened, the emulator uses the system driver.</string>
     <string name="hint_search_cheats">Search cheats</string>
     <string name="no_cheats_found_from_search">No matching cheats</string>
+    <string name="screen_gap">Screen gap</string>
+    <string-array name="screen_gap_options">
+        <item>@string/off</item>
+        <item>Small</item>
+        <item>Medium</item>
+        <item>Large</item>
+    </string-array>
 </resources>

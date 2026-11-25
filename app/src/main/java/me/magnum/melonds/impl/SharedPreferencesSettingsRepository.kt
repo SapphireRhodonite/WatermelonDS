@@ -29,6 +29,7 @@ import kotlinx.serialization.json.decodeFromStream
 import kotlinx.serialization.json.encodeToStream
 import me.magnum.melonds.common.retroarch.RetroArchShaderPreset
 import me.magnum.melonds.common.retroarch.RetroArchShaderRootResolver
+import me.magnum.melonds.domain.model.layout.ScreenGap
 import me.magnum.melonds.domain.model.FrameskipMode
 import me.magnum.melonds.domain.model.FrameskipConfiguration
 import me.magnum.melonds.domain.model.RetroArchShaderSource
@@ -102,6 +103,7 @@ class SharedPreferencesSettingsRepository(
         private const val TAG = "SPSettingsRepository"
         private const val CONTROLLER_CONFIG_FILE = "controller_config.json"
         private const val KEY_EXTERNAL_DISPLAY_MODE = "external_display_mode"
+        private const val KEY_SCREEN_GAP = "screen_gap"
         private const val KEY_DUAL_SCREEN_PRESET = "dual_screen_preset"
         private const val KEY_DUAL_SCREEN_INTEGER_SCALE = "dual_screen_integer_scale"
         private const val KEY_DUAL_SCREEN_INTERNAL_FILL = "dual_screen_internal_fill_height"
@@ -1381,6 +1383,12 @@ class SharedPreferencesSettingsRepository(
         return getOrCreatePreferenceSharedFlow("external_display_keep_ratio") {
             isExternalDisplayKeepAspectRationEnabled()
         }
+    }
+
+    override fun getScreenGap() = getEnumPreference(KEY_SCREEN_GAP, ScreenGap.OFF)
+
+    override fun setScreenGap(gap: ScreenGap) {
+        preferences.edit { putString(KEY_SCREEN_GAP, gap.name.lowercase()) }
     }
 
     override fun getDualScreenPreset(): DualScreenPreset {

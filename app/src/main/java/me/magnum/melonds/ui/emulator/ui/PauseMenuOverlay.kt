@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.SpaceBar
 import androidx.compose.material.icons.filled.Monitor
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.RestartAlt
@@ -98,6 +99,7 @@ private fun optionIcon(option: PauseMenuOption): ImageVector {
             RomPauseMenuOption.CHEATS -> Icons.Filled.Code
             RomPauseMenuOption.VIEW_ACHIEVEMENTS -> Icons.Filled.EmojiEvents
             RomPauseMenuOption.SYNC_RETRO_ACHIEVEMENTS -> Icons.Filled.CloudSync
+            RomPauseMenuOption.SCREEN_GAP -> Icons.Filled.SpaceBar
             RomPauseMenuOption.PRESETS -> Icons.Filled.Monitor
             RomPauseMenuOption.RENDERER_DEBUG -> Icons.Filled.BugReport
             RomPauseMenuOption.RESET -> Icons.Filled.RestartAlt

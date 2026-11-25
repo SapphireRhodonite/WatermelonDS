@@ -13,6 +13,7 @@ import me.magnum.melonds.domain.model.layout.Insets
 import me.magnum.melonds.domain.model.layout.LayoutComponent
 import me.magnum.melonds.domain.model.layout.LayoutDisplay
 import me.magnum.melonds.domain.model.layout.PositionedLayoutComponent
+import me.magnum.melonds.domain.model.layout.ScreenGap
 import me.magnum.melonds.domain.model.layout.ScreenFold
 import me.magnum.melonds.domain.model.layout.ScreenLayout
 import me.magnum.melonds.domain.model.layout.UILayout
@@ -27,7 +28,7 @@ class DefaultLayoutProvider(
     private val screenUnitsConverter: ScreenUnitsConverter,
 ) {
 
-    fun buildDefaultLayout(variant: UILayoutVariant): UILayout {
+    fun buildDefaultLayout(variant: UILayoutVariant, gap: ScreenGap = ScreenGap.OFF): UILayout {
         val width = variant.uiSize.x
         val height = variant.uiSize.y
         val orientation = variant.orientation
@@ -68,6 +69,7 @@ class DefaultLayoutProvider(
                 mainLayout to buildSingleScreenLayout(secondaryDisplay.width, secondaryDisplay.height, LayoutComponent.TOP_SCREEN)
             }
         } else {
+            val gapPx = screenUnitsConverter.dpToPixels(gap.dp.toFloat()).roundToInt()
             val mainScreenLayout = when (orientation) {
                 Orientation.PORTRAIT -> {
                     if (folds.any { it.orientation == Orientation.LANDSCAPE }) {
@@ -75,7 +77,7 @@ class DefaultLayoutProvider(
                         buildDefaultFoldingPortraitLayout(width, height, folds, mainDisplayInsets)
                     } else {
                         // Simple portrait layout. Ignore vertical fold since there's no good way to support it
-                        buildDefaultPortraitLayout(width, height, mainDisplayInsets)
+                        buildDefaultPortraitLayout(width, height, mainDisplayInsets, gapPx = gapPx)
                     }
                 }
                 Orientation.LANDSCAPE -> {
@@ -87,7 +89,7 @@ class DefaultLayoutProvider(
                         buildDefaultFoldingPortraitLayout(width, height, folds, mainDisplayInsets)
                     } else {
                         // No fold
-                        buildDefaultLandscapeLayout(width, height, mainDisplayInsets)
+                        buildDefaultLandscapeLayout(width, height, mainDisplayInsets, gapPx = gapPx)
                     }
                 }
             }
@@ -97,7 +99,7 @@ class DefaultLayoutProvider(
         return UILayout(mainScreenLayout, secondaryScreenLayout)
     }
 
-    private fun buildDefaultPortraitLayout(width: Int, height: Int, insets: Insets, singleScreenComponent: LayoutComponent? = null): ScreenLayout {
+    private fun buildDefaultPortraitLayout(width: Int, height: Int, insets: Insets, singleScreenComponent: LayoutComponent? = null, gapPx: Int = 0): ScreenLayout {
         require(singleScreenComponent?.isScreen() != false) { "When specifying a single screen component, it must be a screen component" }
 
         val safeLeft = insets.left
@@ -112,34 +114,18 @@ class DefaultLayoutProvider(
         val smallButtonsSize = screenUnitsConverter.dpToPixels(40f).toInt()
         val spacing4dp = screenUnitsConverter.dpToPixels(4f).toInt()
 
-        var screenWidth = safeWidth
-        var screenHeight = (safeWidth / consoleAspectRatio).toInt()
-
-        val screenComponents = if (singleScreenComponent == null) {
-            var screenMargin = 0
-            if (screenHeight * 2 > safeHeight) {
-                screenWidth = (safeHeight / 2 * consoleAspectRatio).toInt()
-                screenHeight = safeHeight / 2
-                screenMargin = (safeWidth - screenWidth) / 2
-            }
-
-            val topScreenView = Rect(safeLeft + screenMargin, safeTop, screenWidth, screenHeight)
-            val bottomScreenView = Rect(safeLeft + screenMargin, safeTop + screenHeight, screenWidth, screenHeight)
-
-            arrayOf(
-                PositionedLayoutComponent(topScreenView, LayoutComponent.TOP_SCREEN),
-                PositionedLayoutComponent(bottomScreenView, LayoutComponent.BOTTOM_SCREEN),
-            )
+        val screens = if (singleScreenComponent == null) {
+            defaultScreenPair(Rect(safeLeft, safeTop, safeWidth, safeHeight), Orientation.PORTRAIT, gapPx)
         } else {
             // Align screen to the top of the safe area
-            val screenArea = Rect(safeLeft, safeTop, screenWidth, screenHeight)
-            arrayOf(PositionedLayoutComponent(screenArea, singleScreenComponent))
+            listOf(PositionedLayoutComponent(Rect(safeLeft, safeTop, safeWidth, (safeWidth / consoleAspectRatio).toInt()), singleScreenComponent))
         }
 
-        val screensBottom = if (singleScreenComponent == null) safeTop + screenHeight * 2 else safeTop + screenHeight
+        val bottomScreen = screens.last().rect
+        val screensBottom = bottomScreen.bottom
         // Check if there's space to put all the buttons below the screens. If not, place L, R, and utility buttons aligned with the top of the bottom screen
-        val utilityButtonsTop = if (screensBottom + lrButtonsSize + largeButtonsSize > height) {
-            safeTop + screenHeight
+        val utilityButtonsTop = if (singleScreenComponent == null && screensBottom + lrButtonsSize + largeButtonsSize > height) {
+            bottomScreen.y
         } else {
             screensBottom
         }
@@ -148,8 +134,7 @@ class DefaultLayoutProvider(
         val buttonsView = Rect(width - safeRight - largeButtonsSize, height - safeBottom - largeButtonsSize, largeButtonsSize, largeButtonsSize)
 
         return ScreenLayout(
-            listOf(
-                *screenComponents,
+            screens + listOf(
                 PositionedLayoutComponent(dpadView, LayoutComponent.DPAD),
                 PositionedLayoutComponent(buttonsView, LayoutComponent.BUTTONS),
                 PositionedLayoutComponent(Rect(safeLeft, utilityButtonsTop, lrButtonsSize, lrButtonsSize), LayoutComponent.BUTTON_L),
@@ -164,7 +149,7 @@ class DefaultLayoutProvider(
         )
     }
 
-    private fun buildDefaultLandscapeLayout(width: Int, height: Int, insets: Insets, singleScreenComponent: LayoutComponent? = null): ScreenLayout {
+    private fun buildDefaultLandscapeLayout(width: Int, height: Int, insets: Insets, singleScreenComponent: LayoutComponent? = null, gapPx: Int = 0): ScreenLayout {
         require(singleScreenComponent?.isScreen() != false) { "When specifying a single screen component, it must be a screen component" }
 
         val safeLeft = insets.left
@@ -179,35 +164,19 @@ class DefaultLayoutProvider(
         val smallButtonsSize = screenUnitsConverter.dpToPixels(40f).toInt()
         val spacing4dp = screenUnitsConverter.dpToPixels(4f).toInt()
 
-        val screenComponents = if (singleScreenComponent == null) {
-            var topScreenWidth = (safeWidth * 0.66f).roundToInt()
-            var topScreenHeight = (topScreenWidth / consoleAspectRatio).toInt()
-            if (topScreenHeight > safeHeight) {
-                topScreenWidth = (safeHeight * consoleAspectRatio).toInt()
-                topScreenHeight = safeHeight
-            }
-
-            val topScreenView = Rect(safeLeft, safeTop, topScreenWidth, topScreenHeight)
-            val bottomScreenWidth = safeWidth - topScreenWidth
-            val bottomScreenHeight = (bottomScreenWidth / consoleAspectRatio).toInt()
-            val bottomScreenView = Rect(safeLeft + topScreenWidth, safeTop, bottomScreenWidth, bottomScreenHeight)
-
-            arrayOf(
-                PositionedLayoutComponent(topScreenView, LayoutComponent.TOP_SCREEN),
-                PositionedLayoutComponent(bottomScreenView, LayoutComponent.BOTTOM_SCREEN),
-            )
+        val screens = if (singleScreenComponent == null) {
+            defaultScreenPair(Rect(safeLeft, safeTop, safeWidth, safeHeight), Orientation.LANDSCAPE, gapPx)
         } else {
             val screenArea = centerScreenIn(safeWidth, safeHeight)
             val offsetScreen = Rect(screenArea.x + safeLeft, screenArea.y + safeTop, screenArea.width, screenArea.height)
-            arrayOf(PositionedLayoutComponent(offsetScreen, singleScreenComponent))
+            listOf(PositionedLayoutComponent(offsetScreen, singleScreenComponent))
         }
 
         val dpadView = Rect(safeLeft, height - safeBottom - largeButtonsSize, largeButtonsSize, largeButtonsSize)
         val buttonsView = Rect(width - safeRight - largeButtonsSize, height - safeBottom - largeButtonsSize, largeButtonsSize, largeButtonsSize)
 
         return ScreenLayout(
-            listOf(
-                *screenComponents,
+            screens + listOf(
                 PositionedLayoutComponent(dpadView, LayoutComponent.DPAD),
                 PositionedLayoutComponent(buttonsView, LayoutComponent.BUTTONS),
                 PositionedLayoutComponent(Rect(safeLeft, safeTop, lrButtonsSize, lrButtonsSize), LayoutComponent.BUTTON_L),
