@@ -77,8 +77,8 @@ class GamePanelActivity : Activity() {
         } else {
             (content.parent as? ViewGroup)?.removeView(content)
             setContentView(content)
-            WindowCompat.getInsetsController(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
         }
+        WindowCompat.getInsetsController(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
