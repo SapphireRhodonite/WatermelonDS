@@ -65,8 +65,6 @@ import androidx.lifecycle.viewmodel.MutableCreationExtras
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import androidx.window.layout.FoldingFeature
-import androidx.window.layout.WindowInfoTracker
 import com.squareup.picasso.Picasso
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
@@ -96,7 +94,7 @@ import me.magnum.melonds.domain.model.VideoRenderer
 import me.magnum.melonds.domain.model.retroachievements.RaPendingCounts
 import me.magnum.melonds.domain.model.layout.Insets
 import me.magnum.melonds.domain.model.layout.LayoutComponent
-import me.magnum.melonds.domain.model.layout.ScreenFold
+import me.magnum.melonds.impl.layout.observeSeparatingFolds
 import me.magnum.melonds.domain.model.rom.Rom
 import me.magnum.melonds.domain.model.rom.config.RuntimeMicSource
 import me.magnum.melonds.domain.model.ui.Orientation
@@ -1348,18 +1346,7 @@ open class EmulatorActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                WindowInfoTracker.getOrCreate(this@EmulatorActivity).windowLayoutInfo(this@EmulatorActivity).collect {
-                    val folds = it.displayFeatures.mapNotNull {
-                        if (it is FoldingFeature) {
-                            ScreenFold(
-                                orientation = if (it.orientation == FoldingFeature.Orientation.HORIZONTAL) Orientation.LANDSCAPE else Orientation.PORTRAIT,
-                                type = if (it.isSeparating) ScreenFold.FoldType.SEAMLESS else ScreenFold.FoldType.GAP,
-                                foldBounds = Rect(it.bounds.left, it.bounds.top, it.bounds.width(), it.bounds.height())
-                            )
-                        } else {
-                            null
-                        }
-                    }
+                observeSeparatingFolds(binding.viewLayoutControls, viewModel::setFoldableWindowDensity).collect { folds ->
                     viewModel.setScreenFolds(folds)
                 }
             }
@@ -1912,7 +1899,7 @@ open class EmulatorActivity : AppCompatActivity() {
     }
 
     private fun applyDualScreenPresetSwapState(preset: DualScreenPreset = viewModel.dualScreenPreset.value) {
-        if (preset == DualScreenPreset.OFF) {
+        if (preset == DualScreenPreset.OFF || presentation == null) {
             return
         }
 

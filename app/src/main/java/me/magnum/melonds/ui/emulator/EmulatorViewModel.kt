@@ -80,8 +80,6 @@ import me.magnum.melonds.domain.model.RomInfo
 import me.magnum.melonds.domain.model.RuntimeBackground
 import me.magnum.melonds.domain.model.Rect
 import me.magnum.melonds.domain.model.SaveStateSlot
-import me.magnum.melonds.domain.model.SCREEN_HEIGHT
-import me.magnum.melonds.domain.model.SCREEN_WIDTH
 import me.magnum.melonds.domain.model.ScreenAlignment
 import me.magnum.melonds.domain.model.VideoFiltering
 import me.magnum.melonds.domain.model.VideoRenderer
@@ -182,6 +180,9 @@ import me.magnum.melonds.impl.retroachievements.offline.RetroAchievementsImageCa
 import me.magnum.melonds.impl.retroachievements.offline.SmartSyncSkipReason
 import me.magnum.melonds.impl.retroachievements.offline.SmartSyncEngine
 import me.magnum.melonds.impl.layout.PhysicalScreenSize
+import me.magnum.melonds.impl.layout.DualScreenPresetConfiguration
+import me.magnum.melonds.impl.layout.computeScaledScreenRect
+import me.magnum.melonds.impl.layout.foldPanels
 import me.magnum.melonds.impl.layout.UILayoutProvider
 import me.magnum.melonds.impl.system.NetworkStatusProvider
 import me.magnum.melonds.ui.emulator.component.RetroAchievementsSubmissionHandler
@@ -220,7 +221,6 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import kotlin.coroutines.CoroutineContext
 import kotlin.coroutines.EmptyCoroutineContext
-import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
@@ -442,6 +442,7 @@ class EmulatorViewModel @Inject constructor(
 
     private val _layout = MutableStateFlow<LayoutConfiguration?>(null)
 
+    private val foldableWindowDensity = MutableStateFlow<Float?>(null)
     private val screenGap = MutableStateFlow(settingsRepository.getScreenGap())
     private val _currentLayout = uiLayoutProvider.currentLayout(screenGap).shareIn(viewModelScope, SharingStarted.Lazily)
 
@@ -1255,6 +1256,10 @@ class EmulatorViewModel @Inject constructor(
 
     fun shouldIgnoreDisplayCutoutInLayouts(): Boolean {
         return settingsRepository.shouldIgnoreDisplayCutoutInLayouts()
+    }
+
+    fun setFoldableWindowDensity(density: Float) {
+        foldableWindowDensity.value = density
     }
 
     fun setScreenFolds(folds: List<ScreenFold>) {
@@ -2633,7 +2638,7 @@ class EmulatorViewModel @Inject constructor(
                 )
             }
 
-            combine(layoutConfiguration, dualScreenPresetConfiguration, sameScreenSizeEnabled) { config, dualScreenConfig, sameSize ->
+            combine(layoutConfiguration, dualScreenPresetConfiguration, sameScreenSizeEnabled, foldableWindowDensity) { config, dualScreenConfig, sameSize, density ->
                 val currentLayoutConfiguration = config.layoutConfiguration
                 val currentLayoutVariant = config.layoutVariant
                 val currentVariant = currentLayoutVariant?.first
@@ -2647,7 +2652,14 @@ class EmulatorViewModel @Inject constructor(
                         config.inputOpacity
                     }
 
-                    val matchedLayout = if (sameSize && currentLayoutConfiguration.type == LayoutConfiguration.LayoutType.DEFAULT) {
+                    val automatic = currentLayoutConfiguration.type == LayoutConfiguration.LayoutType.DEFAULT
+                    val matchSize = sameSize && automatic
+                    val foldPanels = currentVariant.foldPanels(
+                        density, dualScreenConfig.preset != DualScreenPreset.OFF, automatic,
+                        if (automatic && density != null) (screenGap.value.dp * density).roundToInt() else 0,
+                    )
+                    val foldedLayout = foldPanels?.applyPreset(currentLayout, dualScreenConfig, matchSize)
+                    val matchedLayout = if (foldPanels == null && matchSize) {
                         val preset = dualScreenConfig.preset
                         PhysicalScreenSize.matchLayout(
                             context, currentLayout, currentVariant,
@@ -2655,14 +2667,16 @@ class EmulatorViewModel @Inject constructor(
                             dualScreenConfig.externalAlignmentOverride ?: preset.defaultExternalAlignment().takeUnless { preset == DualScreenPreset.OFF },
                         )
                     } else null
-                    val adjustedLayout = matchedLayout ?: applyDualScreenPresetLayoutOverrides(currentLayout, currentVariant, dualScreenConfig)
+                    val adjustedLayout = foldedLayout ?: matchedLayout ?: applyDualScreenPresetLayoutOverrides(currentLayout, currentVariant, dualScreenConfig)
                     RuntimeInputLayoutConfiguration(
                         softInputBehaviour = config.softInputBehaviour,
                         softInputOpacity = opacity,
                         isHapticFeedbackEnabled = config.isHapticFeedbackEnabled,
                         layoutOrientation = currentLayoutConfiguration.orientation,
-                        layout = adjustedLayout,
+                        layout = foldPanels?.keepComponentsOffSeam(adjustedLayout) ?: adjustedLayout,
                         supportsScreenGap = currentVariant.supportsScreenGap(currentLayoutConfiguration.type),
+                        foldOrientation = foldPanels?.takeIf { it.recommended == null }?.orientation,
+                        foldPreset = dualScreenConfig.preset.takeIf { foldedLayout != null && it != DualScreenPreset.OFF },
                     )
                 }
             }.collect(_runtimeLayout)
@@ -2675,18 +2689,6 @@ class EmulatorViewModel @Inject constructor(
         val softInputBehaviour: SoftInputBehaviour,
         val isHapticFeedbackEnabled: Boolean,
         val inputOpacity: Int,
-    )
-
-    private data class DualScreenPresetConfiguration(
-        val preset: DualScreenPreset,
-        val integerScale: Boolean,
-        val keepAspectRatio: Boolean,
-        val internalFillHeight: Boolean,
-        val internalFillWidth: Boolean,
-        val externalFillHeight: Boolean,
-        val externalFillWidth: Boolean,
-        val internalAlignmentOverride: ScreenAlignment?,
-        val externalAlignmentOverride: ScreenAlignment?,
     )
 
     private fun applyDualScreenPresetLayoutOverrides(layout: UILayout, variant: UILayoutVariant, config: DualScreenPresetConfiguration): UILayout {
@@ -2765,60 +2767,6 @@ class EmulatorViewModel @Inject constructor(
             }
         }
         return screenLayout.copy(components = updatedComponents)
-    }
-
-    private fun computeScaledScreenRect(
-        availableWidth: Int,
-        availableHeight: Int,
-        integerScale: Boolean,
-        keepAspectRatio: Boolean,
-        fillHeight: Boolean,
-        fillWidth: Boolean,
-        alignment: ScreenAlignment,
-    ): Rect {
-        val (baseWidth, baseHeight) = when {
-            integerScale -> computeIntegerScaleDimensions(availableWidth, availableHeight)
-            keepAspectRatio -> computeAspectRatioDimensions(availableWidth, availableHeight)
-            else -> availableWidth to availableHeight
-        }
-
-        val scaledWidth = if (fillWidth) availableWidth else baseWidth
-        val scaledHeight = if (fillHeight) availableHeight else baseHeight
-
-        val left = ((availableWidth - scaledWidth) / 2f).roundToInt().coerceAtLeast(0)
-        val top = when (alignment) {
-            ScreenAlignment.TOP -> 0
-            ScreenAlignment.CENTER -> ((availableHeight - scaledHeight) / 2f).roundToInt().coerceAtLeast(0)
-            ScreenAlignment.BOTTOM -> (availableHeight - scaledHeight).coerceAtLeast(0)
-        }
-
-        return Rect(left, top, scaledWidth.coerceAtLeast(1), scaledHeight.coerceAtLeast(1))
-    }
-
-    private fun computeIntegerScaleDimensions(availableWidth: Int, availableHeight: Int): Pair<Int, Int> {
-        val widthScale = availableWidth / SCREEN_WIDTH
-        val heightScale = availableHeight / SCREEN_HEIGHT
-        val maxIntegerScale = min(widthScale, heightScale)
-        val scale = if (maxIntegerScale <= 0) {
-            min(
-                availableWidth.toFloat() / SCREEN_WIDTH,
-                availableHeight.toFloat() / SCREEN_HEIGHT,
-            )
-        } else {
-            maxIntegerScale.toFloat()
-        }
-        val width = (SCREEN_WIDTH * scale).roundToInt().coerceAtLeast(1).coerceAtMost(availableWidth)
-        val height = (SCREEN_HEIGHT * scale).roundToInt().coerceAtLeast(1).coerceAtMost(availableHeight)
-        return width to height
-    }
-
-    private fun computeAspectRatioDimensions(availableWidth: Int, availableHeight: Int): Pair<Int, Int> {
-        val widthRatio = availableWidth.toFloat() / SCREEN_WIDTH
-        val heightRatio = availableHeight.toFloat() / SCREEN_HEIGHT
-        val scale = min(widthRatio, heightRatio)
-        val width = (SCREEN_WIDTH * scale).roundToInt().coerceAtLeast(1).coerceAtMost(availableWidth)
-        val height = (SCREEN_HEIGHT * scale).roundToInt().coerceAtLeast(1).coerceAtMost(availableHeight)
-        return width to height
     }
 
     private fun resetEmulatorState(newState: EmulatorState) {

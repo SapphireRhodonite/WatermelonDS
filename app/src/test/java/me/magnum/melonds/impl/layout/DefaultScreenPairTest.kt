@@ -55,10 +55,12 @@ class DefaultScreenPairTest {
         assertEquals(10, bottom.rect.bottom)
 
         val wide = Rect(0, 0, 1600, 220)
-        val (left, right) = defaultScreenPair(wide, Orientation.LANDSCAPE, 24)
-        assertEquals(24, right.rect.x - left.rect.right)
-        assertTrue(wide.contains(left.rect))
-        assertTrue(wide.contains(right.rect))
+        for (gap in listOf(0, 24)) {
+            val (left, right) = defaultScreenPair(wide, Orientation.LANDSCAPE, gap)
+            assertEquals(gap, right.rect.x - left.rect.right)
+            assertTrue(wide.contains(left.rect))
+            assertTrue(wide.contains(right.rect))
+        }
     }
 
     @Test

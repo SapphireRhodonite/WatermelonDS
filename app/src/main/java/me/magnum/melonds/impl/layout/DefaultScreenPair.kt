@@ -34,7 +34,7 @@ internal fun defaultScreenPair(bounds: Rect, orientation: Orientation, gapPx: In
             }
             top = Rect(bounds.x, bounds.y, width, height)
             val remainingWidth = availableWidth - width
-            val bottomWidth = if (gap > 0) remainingWidth.coerceAtMost((bounds.height * consoleAspectRatio).toInt()) else remainingWidth
+            val bottomWidth = remainingWidth.coerceAtMost((bounds.height * consoleAspectRatio).toInt())
             bottom = Rect(top.right + gap, bounds.y, bottomWidth, (bottomWidth / consoleAspectRatio).toInt())
         }
     }

@@ -22,15 +22,12 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
-import androidx.window.layout.FoldingFeature
-import androidx.window.layout.WindowInfoTracker
 import com.squareup.picasso.Picasso
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import me.magnum.melonds.R
-import me.magnum.melonds.domain.model.Rect
 import me.magnum.melonds.domain.model.layout.Insets
-import me.magnum.melonds.domain.model.layout.ScreenFold
+import me.magnum.melonds.impl.layout.observeSeparatingFolds
 import me.magnum.melonds.domain.model.ui.Orientation
 import me.magnum.melonds.extensions.insetsControllerCompat
 import me.magnum.melonds.extensions.setLayoutOrientation
@@ -226,19 +223,7 @@ class LayoutEditorActivity : AppCompatActivity() {
         }
         lifecycleScope.launch {
             lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-                WindowInfoTracker.getOrCreate(this@LayoutEditorActivity).windowLayoutInfo(this@LayoutEditorActivity).collect { info ->
-                    val folds = info.displayFeatures.mapNotNull {
-                        if (it is FoldingFeature) {
-                            ScreenFold(
-                                orientation = if (it.orientation == FoldingFeature.Orientation.HORIZONTAL) Orientation.LANDSCAPE else Orientation.PORTRAIT,
-                                type = if (it.isSeparating) ScreenFold.FoldType.SEAMLESS else ScreenFold.FoldType.GAP,
-                                foldBounds = Rect(it.bounds.left, it.bounds.top, it.bounds.width(), it.bounds.height())
-                            )
-                        } else {
-                            null
-                        }
-                    }
-
+                observeSeparatingFolds(layoutEditorManager).collect { folds ->
                     storeLayoutChanges()
                     viewModel.setScreenFolds(folds)
                 }

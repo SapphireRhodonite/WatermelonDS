@@ -32,7 +32,6 @@ class DefaultLayoutProvider(
         val width = variant.uiSize.x
         val height = variant.uiSize.y
         val orientation = variant.orientation
-        val folds = variant.folds
         val mainDisplay = variant.displays.mainScreenDisplay
         val secondaryDisplay = variant.displays.secondaryScreenDisplay
         val mainDisplayInsets = variant.uiInsets
@@ -70,27 +69,14 @@ class DefaultLayoutProvider(
             }
         } else {
             val gapPx = screenUnitsConverter.dpToPixels(gap.dp.toFloat()).roundToInt()
-            val mainScreenLayout = when (orientation) {
-                Orientation.PORTRAIT -> {
-                    if (folds.any { it.orientation == Orientation.LANDSCAPE }) {
-                        // Flip-phone layout
-                        buildDefaultFoldingPortraitLayout(width, height, folds, mainDisplayInsets)
-                    } else {
-                        // Simple portrait layout. Ignore vertical fold since there's no good way to support it
-                        buildDefaultPortraitLayout(width, height, mainDisplayInsets, gapPx = gapPx)
-                    }
-                }
-                Orientation.LANDSCAPE -> {
-                    if (folds.any { it.orientation == Orientation.PORTRAIT }) {
-                        // Book layout
-                        buildDefaultFoldingLandscapeLayout(width, height, folds, mainDisplayInsets)
-                    } else if (folds.any { it.orientation == Orientation.LANDSCAPE }) {
-                        // Flip-phone layout
-                        buildDefaultFoldingPortraitLayout(width, height, folds, mainDisplayInsets)
-                    } else {
-                        // No fold
-                        buildDefaultLandscapeLayout(width, height, mainDisplayInsets, gapPx = gapPx)
-                    }
+            val fold = variant.folds.firstOrNull()
+            val mainScreenLayout = when (fold?.orientation) {
+                Orientation.LANDSCAPE -> buildDefaultFoldingPortraitLayout(width, height, fold, mainDisplayInsets)
+                Orientation.PORTRAIT -> buildDefaultFoldingLandscapeLayout(width, height, fold, mainDisplayInsets)
+                null -> if (width > height || width == height && orientation == Orientation.LANDSCAPE) {
+                    buildDefaultLandscapeLayout(width, height, mainDisplayInsets, gapPx = gapPx)
+                } else {
+                    buildDefaultPortraitLayout(width, height, mainDisplayInsets, gapPx = gapPx)
                 }
             }
             mainScreenLayout to ScreenLayout()
@@ -194,25 +180,23 @@ class DefaultLayoutProvider(
     /**
      * Creates a portrait layout that supports a horizontal fold. Screens are attached to either sides of the fold and as large as they can be to fit the screen.
      */
-    private fun buildDefaultFoldingPortraitLayout(width: Int, height: Int, folds: List<ScreenFold>, insets: Insets): ScreenLayout {
-        // Only one fold is supported for now
-        val mainFold = folds.first()
-
+    private fun buildDefaultFoldingPortraitLayout(width: Int, height: Int, mainFold: ScreenFold, insets: Insets): ScreenLayout {
         val safeLeft = insets.left
         val safeTop = insets.top
         val safeRight = insets.right
         val safeBottom = insets.bottom
         val safeWidth = width - safeLeft - safeRight
 
-        val largeButtonsSize = screenUnitsConverter.dpToPixels(140f).toInt()
-        val lrButtonsSize = screenUnitsConverter.dpToPixels(50f).toInt()
-        val smallButtonsSize = screenUnitsConverter.dpToPixels(40f).toInt()
-        val spacing4dp = screenUnitsConverter.dpToPixels(4f).toInt()
+        val topHalfHeight = mainFold.foldBounds.y - safeTop
+        val bottomHalfHeight = height - safeBottom - mainFold.foldBounds.bottom
+        val largeButtonsSize = minOf(screenUnitsConverter.dpToPixels(140f).toInt(), safeWidth / 3, bottomHalfHeight / 2)
+        val lrButtonsSize = minOf(screenUnitsConverter.dpToPixels(50f).toInt(), safeWidth / 8, bottomHalfHeight / 3)
+        val smallButtonsSize = minOf(screenUnitsConverter.dpToPixels(40f).toInt(), safeWidth / 8, bottomHalfHeight / 3)
+        val spacing4dp = minOf(screenUnitsConverter.dpToPixels(4f).toInt(), safeWidth / 64)
+        val center = safeLeft + safeWidth / 2
 
         var screenWidth = safeWidth
         var screenHeight = (safeWidth / consoleAspectRatio).toInt()
-        val topHalfHeight = mainFold.foldBounds.y - safeTop
-        val bottomHalfHeight = height - safeBottom - mainFold.foldBounds.bottom
         var screenMargin = 0
         if (screenHeight > topHalfHeight || screenHeight > bottomHalfHeight) {
             val limitingHeight = min(topHalfHeight, bottomHalfHeight)
@@ -234,12 +218,12 @@ class DefaultLayoutProvider(
                 PositionedLayoutComponent(buttonsView, LayoutComponent.BUTTONS),
                 PositionedLayoutComponent(Rect(safeLeft, mainFold.foldBounds.bottom, lrButtonsSize, lrButtonsSize), LayoutComponent.BUTTON_L),
                 PositionedLayoutComponent(Rect(width - safeRight - lrButtonsSize, mainFold.foldBounds.bottom, lrButtonsSize, lrButtonsSize), LayoutComponent.BUTTON_R),
-                PositionedLayoutComponent(Rect(width / 2 - smallButtonsSize - spacing4dp / 2, height - safeBottom - smallButtonsSize, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_SELECT),
-                PositionedLayoutComponent(Rect(width / 2 + spacing4dp / 2, height - safeBottom - smallButtonsSize, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_START),
-                PositionedLayoutComponent(Rect(width / 2 - (smallButtonsSize * 2.0 + spacing4dp * 1.5).toInt(), mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_HINGE),
-                PositionedLayoutComponent(Rect(width / 2 - smallButtonsSize - (spacing4dp / 2.0).toInt(), mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_TOGGLE_SOFT_INPUT),
-                PositionedLayoutComponent(Rect(width / 2 + spacing4dp + (spacing4dp / 2.0).toInt(), mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_MICROPHONE_TOGGLE),
-                PositionedLayoutComponent(Rect(width / 2 + smallButtonsSize + (spacing4dp * 1.5).toInt(), mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_FAST_FORWARD_TOGGLE),
+                PositionedLayoutComponent(Rect(center - smallButtonsSize - spacing4dp / 2, height - safeBottom - smallButtonsSize, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_SELECT),
+                PositionedLayoutComponent(Rect(center + spacing4dp / 2, height - safeBottom - smallButtonsSize, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_START),
+                PositionedLayoutComponent(Rect(center - (smallButtonsSize * 2.0 + spacing4dp * 1.5).toInt(), mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_HINGE),
+                PositionedLayoutComponent(Rect(center - smallButtonsSize - (spacing4dp / 2.0).toInt(), mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_TOGGLE_SOFT_INPUT),
+                PositionedLayoutComponent(Rect(center + spacing4dp / 2, mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_MICROPHONE_TOGGLE),
+                PositionedLayoutComponent(Rect(center + smallButtonsSize + (spacing4dp * 1.5).toInt(), mainFold.foldBounds.bottom, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_FAST_FORWARD_TOGGLE),
             )
         )
     }
@@ -247,20 +231,18 @@ class DefaultLayoutProvider(
     /**
      * Creates a landscape layout that supports a vertical fold. Screens are attached to either sides of the fold and as large as they can be to fit the screen.
      */
-    private fun buildDefaultFoldingLandscapeLayout(width: Int, height: Int, folds: List<ScreenFold>, insets: Insets): ScreenLayout {
-        // Only one fold is supported for now
-        val mainFold = folds.first()
-
+    private fun buildDefaultFoldingLandscapeLayout(width: Int, height: Int, mainFold: ScreenFold, insets: Insets): ScreenLayout {
         val safeLeft = insets.left
         val safeTop = insets.top
         val safeRight = insets.right
         val safeBottom = insets.bottom
         val safeHeight = height - safeTop - safeBottom
 
-        val largeButtonsSize = screenUnitsConverter.dpToPixels(140f).toInt()
-        val lrButtonsSize = screenUnitsConverter.dpToPixels(50f).toInt()
-        val smallButtonsSize = screenUnitsConverter.dpToPixels(40f).toInt()
-        val spacing8dp = screenUnitsConverter.dpToPixels(8f).toInt()
+        val paneWidth = minOf(mainFold.foldBounds.x - safeLeft, width - safeRight - mainFold.foldBounds.right)
+        val smallButtonsSize = minOf(screenUnitsConverter.dpToPixels(40f).toInt(), paneWidth / 5, safeHeight / 3)
+        val spacing8dp = minOf(screenUnitsConverter.dpToPixels(8f).toInt(), paneWidth / 32)
+        val largeButtonsSize = minOf(screenUnitsConverter.dpToPixels(140f).toInt(), paneWidth - smallButtonsSize - 2 * spacing8dp, safeHeight / 2)
+        val lrButtonsSize = minOf(screenUnitsConverter.dpToPixels(50f).toInt(), paneWidth - 2 * (smallButtonsSize + spacing8dp), safeHeight / 3)
 
         // Position to the left of the fold, attached to the fold. As big as the screen allows
         var topScreenWidth = mainFold.foldBounds.x - safeLeft
@@ -302,8 +284,8 @@ class DefaultLayoutProvider(
                 PositionedLayoutComponent(Rect(mainFold.foldBounds.right + spacing8dp, height - safeBottom - smallButtonsSize, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_START),
                 PositionedLayoutComponent(Rect(mainFold.foldBounds.x - smallButtonsSize * 2 - spacing8dp * 2, safeTop, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_HINGE),
                 PositionedLayoutComponent(Rect(mainFold.foldBounds.x - smallButtonsSize - spacing8dp, safeTop, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_TOGGLE_SOFT_INPUT),
-                PositionedLayoutComponent(Rect(mainFold.foldBounds.right + smallButtonsSize + spacing8dp, safeTop, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_MICROPHONE_TOGGLE),
-                PositionedLayoutComponent(Rect(mainFold.foldBounds.right + spacing8dp * 2, safeTop, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_FAST_FORWARD_TOGGLE),
+                PositionedLayoutComponent(Rect(mainFold.foldBounds.right + spacing8dp, safeTop, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_MICROPHONE_TOGGLE),
+                PositionedLayoutComponent(Rect(mainFold.foldBounds.right + smallButtonsSize + spacing8dp * 2, safeTop, smallButtonsSize, smallButtonsSize), LayoutComponent.BUTTON_FAST_FORWARD_TOGGLE),
             )
         )
     }

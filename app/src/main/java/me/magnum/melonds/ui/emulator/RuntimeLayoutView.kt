@@ -1,6 +1,13 @@
 package me.magnum.melonds.ui.emulator
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.ValueAnimator
 import android.content.Context
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
+import android.provider.Settings
 import android.util.AttributeSet
 import androidx.core.view.isGone
 import androidx.core.view.isVisible
@@ -20,6 +27,7 @@ import me.magnum.melonds.ui.emulator.input.Slot2AnalogInputHandler
 import me.magnum.melonds.ui.emulator.input.SingleButtonInputHandler
 import me.magnum.melonds.ui.emulator.input.TouchscreenInputHandler
 import me.magnum.melonds.ui.emulator.input.view.ToggleableImageView
+import me.magnum.melonds.ui.emulator.model.FoldScreenSwapState
 import me.magnum.melonds.ui.emulator.model.ConnectedControllersState
 import me.magnum.melonds.ui.emulator.model.RuntimeInputLayoutConfiguration
 import me.magnum.melonds.ui.layouteditor.model.LayoutTarget
@@ -35,7 +43,8 @@ class RuntimeLayoutView(context: Context, attrs: AttributeSet? = null) : LayoutV
     private var frontendInputHandler: IInputListener? = null
     private var systemInputHandler: IInputListener? = null
     private var isSoftInputVisible = true
-    private var areScreensSwapped = false
+    private val screenSwap = FoldScreenSwapState()
+    private var foldTransition: ValueAnimator? = null
     private var connectedControllersState: ConnectedControllersState = ConnectedControllersState.NoControllers
     private var slot2AnalogInput: Slot2AnalogInput? = null
     private var slot2AnalogHandler: Slot2AnalogInputHandler? = null
@@ -69,12 +78,12 @@ class RuntimeLayoutView(context: Context, attrs: AttributeSet? = null) : LayoutV
     }
 
     fun swapScreens() {
-        areScreensSwapped = !areScreensSwapped
+        screenSwap.toggle()
         updateScreenInputs()
     }
 
     fun areScreensSwapped(): Boolean {
-        return areScreensSwapped
+        return screenSwap.isSwapped
     }
 
     fun setLayoutComponentToggleState(layoutComponent: LayoutComponent, isEnabled: Boolean) {
@@ -83,11 +92,40 @@ class RuntimeLayoutView(context: Context, attrs: AttributeSet? = null) : LayoutV
     }
 
     fun instantiateLayout(runtimeLayout: RuntimeInputLayoutConfiguration, layoutTarget: LayoutTarget) {
+        val previousLayout = currentRuntimeLayout
+        screenSwap.setFoldPreset(runtimeLayout.foldPreset)
         currentRuntimeLayout = runtimeLayout
         instantiateLayout(runtimeLayout.layout, layoutTarget)
         updateInputs()
         updateVisibility()
         setLayoutComponentToggleState(LayoutComponent.BUTTON_TOGGLE_SOFT_INPUT, isSoftInputVisible)
+        if (layoutTarget == LayoutTarget.MAIN_SCREEN && previousLayout != null &&
+            previousLayout.foldOrientation != runtimeLayout.foldOrientation && isShown
+        ) {
+            revealFoldLayout()
+        }
+    }
+
+    private fun revealFoldLayout() {
+        val animate = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ValueAnimator.areAnimatorsEnabled()
+            else Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) > 0f
+        if (!animate) return
+        val shade = ColorDrawable(Color.BLACK).apply {
+            setBounds(0, 0, width, height)
+            alpha = 30
+        }
+        overlay.add(shade)
+        foldTransition = ValueAnimator.ofInt(shade.alpha, 0).apply {
+            duration = 120
+            addUpdateListener { shade.alpha = it.animatedValue as Int }
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) {
+                    overlay.remove(shade)
+                    foldTransition = null
+                }
+            })
+            start()
+        }
     }
 
     private fun updateInputs() {
@@ -151,7 +189,7 @@ class RuntimeLayoutView(context: Context, attrs: AttributeSet? = null) : LayoutV
     }
 
     private fun updateScreenInputs() {
-        val (touchScreenComponent, nonTouchScreenComponent) = if (areScreensSwapped) {
+        val (touchScreenComponent, nonTouchScreenComponent) = if (screenSwap.isSwapped) {
             LayoutComponent.TOP_SCREEN to LayoutComponent.BOTTOM_SCREEN
         } else {
             LayoutComponent.BOTTOM_SCREEN to LayoutComponent.TOP_SCREEN
@@ -169,6 +207,7 @@ class RuntimeLayoutView(context: Context, attrs: AttributeSet? = null) : LayoutV
     }
 
     override fun destroyLayout() {
+        foldTransition?.cancel()
         releaseVirtualButtonInputs()
         virtualButtonInputs.clear()
         slot2AnalogHandler = null
@@ -176,6 +215,7 @@ class RuntimeLayoutView(context: Context, attrs: AttributeSet? = null) : LayoutV
     }
 
     override fun onDetachedFromWindow() {
+        foldTransition?.cancel()
         releaseVirtualButtonInputs()
         super.onDetachedFromWindow()
     }

@@ -1,5 +1,7 @@
 package me.magnum.melonds.ui.emulator.model
 
+import me.magnum.melonds.domain.model.DualScreenPreset
+import me.magnum.melonds.domain.model.ui.Orientation
 import me.magnum.melonds.domain.model.input.SoftInputBehaviour
 import me.magnum.melonds.domain.model.layout.LayoutConfiguration
 import me.magnum.melonds.domain.model.layout.UILayout
@@ -11,4 +13,6 @@ data class RuntimeInputLayoutConfiguration(
     val layoutOrientation: LayoutConfiguration.LayoutOrientation,
     val layout: UILayout,
     val supportsScreenGap: Boolean,
+    val foldOrientation: Orientation?,
+    val foldPreset: DualScreenPreset?,
 )

@@ -33,7 +33,13 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
         if (size == null || insets == null || orientation == null || folds == null || displays == null) {
             null
         } else {
-            UILayoutVariant(size, insets, orientation, folds, displays)
+            val usableFolds = folds.filter { fold ->
+                when (fold.orientation) {
+                    Orientation.LANDSCAPE -> fold.foldBounds.y > insets.top && fold.foldBounds.bottom < size.y - insets.bottom
+                    Orientation.PORTRAIT -> fold.foldBounds.x > insets.left && fold.foldBounds.right < size.x - insets.right
+                }
+            }
+            UILayoutVariant(size, insets, orientation, usableFolds, displays)
         }
     }.distinctUntilChanged().debounce(50.milliseconds)
 
@@ -181,7 +187,10 @@ class UILayoutProvider(private val defaultLayoutProvider: DefaultLayoutProvider)
         }
 
         val bestVariant = layoutConfiguration.layoutVariants.entries.firstOrNull {
-            it.key.orientation == variant.orientation && it.key.uiSize == variant.uiSize
+            val stored = it.key
+            val compatiblePosture = variant.displays.secondaryScreenDisplay != null ||
+                (stored.displays.secondaryScreenDisplay == null && stored.folds.filter { fold -> fold.type == ScreenFold.FoldType.SEAMLESS } == variant.folds)
+            compatiblePosture && stored.orientation == variant.orientation && stored.uiSize == variant.uiSize
         }
         if (bestVariant != null) {
             if (bestVariant.key.uiInsets == variant.uiInsets) {
