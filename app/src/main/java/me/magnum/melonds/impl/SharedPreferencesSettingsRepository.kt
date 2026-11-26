@@ -105,6 +105,7 @@ class SharedPreferencesSettingsRepository(
         private const val KEY_EXTERNAL_DISPLAY_MODE = "external_display_mode"
         private const val KEY_SCREEN_GAP = "screen_gap"
         private const val KEY_DUAL_SCREEN_PRESET = "dual_screen_preset"
+        private const val KEY_SAME_SCREEN_SIZE = "same_screen_size"
         private const val KEY_DUAL_SCREEN_INTEGER_SCALE = "dual_screen_integer_scale"
         private const val KEY_DUAL_SCREEN_INTERNAL_FILL = "dual_screen_internal_fill_height"
         private const val KEY_DUAL_SCREEN_EXTERNAL_FILL = "dual_screen_external_fill_height"
@@ -1399,6 +1400,16 @@ class SharedPreferencesSettingsRepository(
         return getOrCreatePreferenceSharedFlow(KEY_DUAL_SCREEN_PRESET) {
             getDualScreenPreset()
         }
+    }
+
+    override fun isSameScreenSizeEnabled() = preferences.getBoolean(KEY_SAME_SCREEN_SIZE, false)
+
+    override fun observeSameScreenSizeEnabled() = getOrCreatePreferenceSharedFlow(KEY_SAME_SCREEN_SIZE) {
+        isSameScreenSizeEnabled()
+    }
+
+    override fun setSameScreenSizeEnabled(enabled: Boolean) {
+        preferences.edit { putBoolean(KEY_SAME_SCREEN_SIZE, enabled) }
     }
 
     override fun isDualScreenIntegerScaleEnabled(): Boolean {

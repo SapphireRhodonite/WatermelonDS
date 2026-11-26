@@ -73,6 +73,8 @@ fun ConsolePresetsOverlay(
     onDualScreenPresetSelected: (DualScreenPreset) -> Unit,
     keepAspectRatio: Boolean,
     onKeepAspectRatioChanged: (Boolean) -> Unit,
+    sameScreenSize: Boolean,
+    onSameScreenSizeChanged: (Boolean) -> Unit,
     integerScaleEnabled: Boolean,
     onIntegerScaleChanged: (Boolean) -> Unit,
     internalFillHeight: Boolean,
@@ -106,6 +108,7 @@ fun ConsolePresetsOverlay(
         when (screen) {
             PresetsScreen.MAIN -> {
                 val presetSelected = dualScreenPreset != DualScreenPreset.OFF
+                ConsoleToggleRow(stringResource(R.string.same_screen_size), sameScreenSize, onSameScreenSizeChanged)
                 if (!presetSelected) {
                     ConsoleSectionLabel(stringResource(R.string.dual_screen_presets_disabled_hint))
                 }

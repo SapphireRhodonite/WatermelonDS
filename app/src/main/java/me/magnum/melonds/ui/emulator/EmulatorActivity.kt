@@ -762,6 +762,7 @@ open class EmulatorActivity : AppCompatActivity() {
                     showDualScreenPresets.value -> {
                         val preset by viewModel.dualScreenPreset.collectAsState()
                         val keepAspectRatio by viewModel.externalDisplayKeepAspectRatioEnabled.collectAsState()
+                        val sameSize by viewModel.sameScreenSizeEnabled.collectAsState()
                         val integerScaleEnabled by viewModel.dualScreenIntegerScaleEnabled.collectAsState()
                         val internalFillHeight by viewModel.dualScreenInternalFillHeightEnabled.collectAsState()
                         val internalFillWidth by viewModel.dualScreenInternalFillWidthEnabled.collectAsState()
@@ -781,6 +782,8 @@ open class EmulatorActivity : AppCompatActivity() {
                             },
                             keepAspectRatio = keepAspectRatio,
                             onKeepAspectRatioChanged = { enabled -> viewModel.setExternalDisplayKeepAspectRatioEnabled(enabled) },
+                            sameScreenSize = sameSize,
+                            onSameScreenSizeChanged = viewModel::setSameScreenSizeEnabled,
                             integerScaleEnabled = integerScaleEnabled,
                             onIntegerScaleChanged = { enabled -> viewModel.setDualScreenIntegerScaleEnabled(enabled) },
                             internalFillHeight = internalFillHeight,

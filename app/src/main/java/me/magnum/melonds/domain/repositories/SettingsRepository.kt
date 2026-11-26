@@ -110,6 +110,9 @@ interface SettingsRepository {
     fun setScreenGap(gap: ScreenGap)
     fun getDualScreenPreset(): DualScreenPreset
     fun observeDualScreenPreset(): Flow<DualScreenPreset>
+    fun isSameScreenSizeEnabled(): Boolean
+    fun observeSameScreenSizeEnabled(): Flow<Boolean>
+    fun setSameScreenSizeEnabled(enabled: Boolean)
     fun isDualScreenIntegerScaleEnabled(): Boolean
     fun observeDualScreenIntegerScaleEnabled(): Flow<Boolean>
     fun isDualScreenInternalFillHeightEnabled(): Boolean

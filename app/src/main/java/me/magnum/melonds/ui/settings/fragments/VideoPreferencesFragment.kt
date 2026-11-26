@@ -1655,6 +1655,8 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
         val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_dual_screen_presets, null)
         val radioGroup = dialogView.findViewById<RadioGroup>(R.id.radioGroupPresets)
         val keepAspectSwitch = dialogView.findViewById<SwitchCompat>(R.id.switchKeepAspectRatio)
+        val sameScreenSizeSwitch = dialogView.findViewById<SwitchCompat>(R.id.switchSameScreenSize)
+        sameScreenSizeSwitch.isChecked = settingsRepository.isSameScreenSizeEnabled()
         val integerScaleSwitch = dialogView.findViewById<SwitchCompat>(R.id.switchIntegerScale)
         val fillAreaButton = dialogView.findViewById<Button>(R.id.buttonFillAreaOptions)
         val verticalAlignmentButton = dialogView.findViewById<Button>(R.id.buttonVerticalAlignmentOptions)
@@ -1749,6 +1751,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             .setTitle(R.string.dual_screen_presets_settings_title)
             .setView(dialogView)
             .setPositiveButton(R.string.ok) { _, _ ->
+                settingsRepository.setSameScreenSizeEnabled(sameScreenSizeSwitch.isChecked)
                 settingsRepository.setDualScreenPreset(selectedPreset)
                 settingsRepository.setExternalDisplayKeepAspectRatioEnabled(keepAspectRatio)
                 settingsRepository.setDualScreenIntegerScaleEnabled(integerScale && selectedPreset != DualScreenPreset.OFF)

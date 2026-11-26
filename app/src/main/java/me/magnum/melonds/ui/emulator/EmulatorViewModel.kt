@@ -181,6 +181,7 @@ import me.magnum.melonds.ui.emulator.component.RaRuntimeAuthenticationPolicy
 import me.magnum.melonds.impl.retroachievements.offline.RetroAchievementsImageCacheWarmer
 import me.magnum.melonds.impl.retroachievements.offline.SmartSyncSkipReason
 import me.magnum.melonds.impl.retroachievements.offline.SmartSyncEngine
+import me.magnum.melonds.impl.layout.PhysicalScreenSize
 import me.magnum.melonds.impl.layout.UILayoutProvider
 import me.magnum.melonds.impl.system.NetworkStatusProvider
 import me.magnum.melonds.ui.emulator.component.RetroAchievementsSubmissionHandler
@@ -510,6 +511,9 @@ class EmulatorViewModel @Inject constructor(
 
     private val _dualScreenPreset = MutableStateFlow(settingsRepository.getDualScreenPreset())
     val dualScreenPreset = _dualScreenPreset.asStateFlow()
+
+    val sameScreenSizeEnabled = settingsRepository.observeSameScreenSizeEnabled()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, settingsRepository.isSameScreenSizeEnabled())
 
     private val _dualScreenIntegerScaleEnabled = MutableStateFlow(settingsRepository.isDualScreenIntegerScaleEnabled())
     val dualScreenIntegerScaleEnabled = _dualScreenIntegerScaleEnabled.asStateFlow()
@@ -1275,6 +1279,8 @@ class EmulatorViewModel @Inject constructor(
         settingsRepository.setScreenGap(gap)
         screenGap.value = gap
     }
+
+    fun setSameScreenSizeEnabled(enabled: Boolean) = settingsRepository.setSameScreenSizeEnabled(enabled)
 
     fun setDualScreenIntegerScaleEnabled(enabled: Boolean) {
         _dualScreenIntegerScaleEnabled.value = enabled
@@ -2627,7 +2633,7 @@ class EmulatorViewModel @Inject constructor(
                 )
             }
 
-            combine(layoutConfiguration, dualScreenPresetConfiguration) { config, dualScreenConfig ->
+            combine(layoutConfiguration, dualScreenPresetConfiguration, sameScreenSizeEnabled) { config, dualScreenConfig, sameSize ->
                 val currentLayoutConfiguration = config.layoutConfiguration
                 val currentLayoutVariant = config.layoutVariant
                 val currentVariant = currentLayoutVariant?.first
@@ -2641,7 +2647,15 @@ class EmulatorViewModel @Inject constructor(
                         config.inputOpacity
                     }
 
-                    val adjustedLayout = applyDualScreenPresetLayoutOverrides(currentLayout, currentVariant, dualScreenConfig)
+                    val matchedLayout = if (sameSize && currentLayoutConfiguration.type == LayoutConfiguration.LayoutType.DEFAULT) {
+                        val preset = dualScreenConfig.preset
+                        PhysicalScreenSize.matchLayout(
+                            context, currentLayout, currentVariant,
+                            dualScreenConfig.internalAlignmentOverride ?: preset.defaultInternalAlignment().takeUnless { preset == DualScreenPreset.OFF },
+                            dualScreenConfig.externalAlignmentOverride ?: preset.defaultExternalAlignment().takeUnless { preset == DualScreenPreset.OFF },
+                        )
+                    } else null
+                    val adjustedLayout = matchedLayout ?: applyDualScreenPresetLayoutOverrides(currentLayout, currentVariant, dualScreenConfig)
                     RuntimeInputLayoutConfiguration(
                         softInputBehaviour = config.softInputBehaviour,
                         softInputOpacity = opacity,

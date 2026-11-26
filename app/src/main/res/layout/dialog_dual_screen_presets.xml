@@ -12,6 +12,12 @@
         android:paddingTop="16dp"
         android:paddingBottom="8dp">
 
+        <androidx.appcompat.widget.SwitchCompat
+            android:id="@+id/switchSameScreenSize"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/same_screen_size" />
+
         <TextView
             android:id="@+id/textPresetsDisabledHint"
             android:layout_width="match_parent"

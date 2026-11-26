@@ -699,6 +699,7 @@
     <string name="video_vulkan_driver_import_other_gpu">Instala un ZIP de un driver Vulkan compatible con tu GPU. Si el driver no se puede abrir, el emulador usa el del sistema.</string>
     <string name="hint_search_cheats">Buscar trucos</string>
     <string name="no_cheats_found_from_search">Ningún truco coincide con la búsqueda</string>
+    <string name="same_screen_size">Mismo tamaño de pantalla</string>
     <string name="screen_gap">Separación entre pantallas</string>
     <string-array name="screen_gap_options">
         <item>@string/off</item>
