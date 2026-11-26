@@ -21,12 +21,26 @@ android {
     testBuildType = "release"
 
     signingConfigs {
+        val props = gradleLocalProperties(rootDir, providers)
         create("release") {
-            val props = gradleLocalProperties(rootDir, providers)
             (props["MELONDS_KEYSTORE"] as String?)?.let { storeFile = file(it) }
             storePassword = props["MELONDS_KEYSTORE_PASSWORD"] as String? ?: ""
             keyAlias = props["MELONDS_KEY_ALIAS"] as String? ?: ""
             keyPassword = props["MELONDS_KEY_PASSWORD"] as String? ?: ""
+        }
+        val uploadKeys = listOf(
+            "PLAY_UPLOAD_KEYSTORE", "PLAY_UPLOAD_STORE_PASSWORD",
+            "PLAY_UPLOAD_KEY_ALIAS", "PLAY_UPLOAD_KEY_PASSWORD",
+        )
+        if (uploadKeys.all { !props.getProperty(it).isNullOrBlank() }) {
+            create("playUpload") {
+                storeFile = file(props.getProperty("PLAY_UPLOAD_KEYSTORE"))
+                storePassword = props.getProperty("PLAY_UPLOAD_STORE_PASSWORD")
+                keyAlias = props.getProperty("PLAY_UPLOAD_KEY_ALIAS")
+                keyPassword = props.getProperty("PLAY_UPLOAD_KEY_PASSWORD")
+            }
+        } else if (uploadKeys.any { props.containsKey(it) }) {
+            logger.warn("Incomplete PLAY_UPLOAD configuration. Play release will be unsigned unless a signing override is provided.")
         }
     }
 
@@ -60,7 +74,6 @@ android {
         getByName("release") {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
             externalNativeBuild {
                 cmake {
                     arguments("-DMELONDS_ANDROID_DEBUG_BUILD=0")
@@ -82,6 +95,8 @@ android {
     productFlavors {
         create("playStore") {
             dimension = "version"
+            applicationIdSuffix = ".playstore"
+            signingConfig = signingConfigs.findByName("playUpload")
             resValue("bool", "adrenotools_enabled", "false")
             externalNativeBuild {
                 cmake {
@@ -92,6 +107,7 @@ android {
         create("gitHub") {
             dimension = "version"
             isDefault = true
+            signingConfig = signingConfigs.getByName("release")
             resValue("bool", "adrenotools_enabled", "true")
             externalNativeBuild {
                 cmake {
