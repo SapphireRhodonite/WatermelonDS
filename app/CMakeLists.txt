@@ -11,6 +11,10 @@ if (MELONDS_ANDROID_DEBUG_BUILD)
     add_compile_definitions(MELONDS_ANDROID_DEBUG_BUILD=1)
 else()
     add_compile_definitions(MELONDS_ANDROID_DEBUG_BUILD=0)
+    get_filename_component(ANDROID_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/.." REALPATH)
+    add_compile_options(
+            "-ffile-prefix-map=${ANDROID_REPO_ROOT}=/src/watermelonds"
+            "-ffile-prefix-map=${ANDROID_NDK}=/ndk")
 endif()
 
 option(MELONDS_ENABLE_ADRENOTOOLS "Enable libadrenotools custom Adreno Vulkan driver support" OFF)

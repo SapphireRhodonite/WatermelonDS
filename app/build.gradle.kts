@@ -488,7 +488,17 @@ val copyLibrashaderAbiArtifacts = librashaderAbiTargets.map { abiTarget ->
         environment("CXX_${abiTarget.rustTarget.replace("-", "_")}", clangCpp.absolutePath)
         environment("AR_${abiTarget.rustTarget.replace("-", "_")}", llvmAr.absolutePath)
         environment("CARGO_TARGET_${targetEnvKey}_LINKER", clang.absolutePath)
-        environment("CARGO_TARGET_${targetEnvKey}_RUSTFLAGS", "-C link-arg=-Wl,-soname,liblibrashader.so")
+        val cargoHome = System.getenv("CARGO_HOME")?.let { workingDir.resolve(it) }
+            ?: File(System.getProperty("user.home"), ".cargo")
+        val inheritedRustFlags = System.getenv("CARGO_ENCODED_RUSTFLAGS")?.split('\u001f')
+            ?: System.getenv("RUSTFLAGS")?.split(' ')
+            ?: listOf("-C", "link-arg=-Wl,-soname,liblibrashader.so")
+        val rustFlags = inheritedRustFlags.filter { it.isNotEmpty() } + listOf(
+            "--remap-path-prefix=${cargoHome.canonicalPath}=cargo",
+            "--remap-path-prefix=${workingDir.canonicalPath}=librashader",
+        )
+        inputs.property("librashaderRustFlags", rustFlags)
+        environment("CARGO_ENCODED_RUSTFLAGS", rustFlags.joinToString("\u001f"))
         environment("PATH", augmentedLibrashaderPath())
 
         doFirst {
