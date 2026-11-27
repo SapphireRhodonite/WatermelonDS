@@ -14,6 +14,10 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.core.content.getSystemService
 import androidx.documentfile.provider.DocumentFile
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import me.magnum.melonds.ui.settings.viewmodel.ShaderInstallViewModel
 import androidx.lifecycle.lifecycleScope
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
@@ -57,16 +61,9 @@ import android.widget.RadioButton
 import android.widget.RadioGroup
 import android.widget.SimpleAdapter
 import android.widget.TextView
-import androidx.work.Constraints
-import androidx.work.ExistingWorkPolicy
-import androidx.work.NetworkType
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
 import java.io.File
 import java.util.Date
 import me.magnum.melonds.common.retroarch.RetroArchShaderRootResolver
-import me.magnum.melonds.common.workers.RetroArchShaderInstallWorker
 import me.magnum.melonds.domain.model.RetroArchShaderSource
 import me.magnum.melonds.impl.RetroArchShaderLibraryManager
 import me.magnum.melonds.impl.ShaderCompatibilityLog
@@ -125,6 +122,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     private val shaderWeightCache = mutableMapOf<String, RetroArchShaderPreset.Weight>()
     private lateinit var adrenoVulkanDriverManager: AdrenoVulkanDriverManager
     private var retroArchPresetScanJob: Job? = null
+    private val shaderInstall by viewModels<ShaderInstallViewModel>()
     private var shaderInstallObserverJob: Job? = null
     private var shaderInstallProgressDialog: AlertDialog? = null
     private var shaderInstallProgressBar: ProgressBar? = null
@@ -1343,41 +1341,22 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     }
 
     private fun startShaderInstall() {
-        val request = OneTimeWorkRequestBuilder<RetroArchShaderInstallWorker>()
-            .setConstraints(
-                Constraints.Builder()
-                    .setRequiredNetworkType(NetworkType.CONNECTED)
-                    .build(),
-            )
-            .build()
-
-        WorkManager.getInstance(requireContext()).enqueueUniqueWork(
-            RetroArchShaderInstallWorker.WORK_NAME,
-            ExistingWorkPolicy.KEEP,
-            request,
-        )
-        showShaderInstallProgressDialog()
+        shaderInstall.start()
     }
 
     private fun observeShaderInstallWork() {
         shaderInstallObserverJob?.cancel()
         shaderInstallObserverJob = lifecycleScope.launch {
-            WorkManager.getInstance(requireContext())
-                .getWorkInfosForUniqueWorkFlow(RetroArchShaderInstallWorker.WORK_NAME)
-                .collect { workInfos ->
-                    val info = workInfos.lastOrNull() ?: return@collect
-                    when (info.state) {
-                        WorkInfo.State.ENQUEUED, WorkInfo.State.BLOCKED -> {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                shaderInstall.state.collect { state ->
+                    when (state) {
+                        ShaderInstallViewModel.State.Idle -> Unit
+                        is ShaderInstallViewModel.State.Running -> {
                             showShaderInstallProgressDialog()
-                            shaderInstallPhaseText?.setText(R.string.video_retroarch_shader_waiting_network)
-                            shaderInstallProgressBar?.isIndeterminate = true
-                            shaderInstallDetailText?.text = ""
+                            applyShaderInstallProgress(state.progress)
                         }
-                        WorkInfo.State.RUNNING -> {
-                            showShaderInstallProgressDialog()
-                            applyShaderInstallProgress(info)
-                        }
-                        WorkInfo.State.SUCCEEDED -> {
+                        ShaderInstallViewModel.State.Installed -> {
+                            shaderInstall.acknowledge()
                             dismissShaderInstallProgressDialog()
                             if (::shaderPresetPreference.isInitialized) {
                                 updateRetroArchPresetEntries(shaderPresetPreference, resetSelection = false)
@@ -1388,35 +1367,35 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                                 selectDsLitePreset(preset, allowDownload = false)
                             }
                         }
-                        WorkInfo.State.FAILED -> {
+                        is ShaderInstallViewModel.State.Failed -> {
+                            shaderInstall.acknowledge()
                             pendingDsLitePreset = null
                             dismissShaderInstallProgressDialog()
-                            val reasonName = info.outputData.getString(RetroArchShaderInstallWorker.KEY_FAILURE_REASON)
-                            val reason = runCatching {
-                                RetroArchShaderLibraryManager.ShaderInstallException.Reason.valueOf(reasonName.orEmpty())
-                            }.getOrDefault(RetroArchShaderLibraryManager.ShaderInstallException.Reason.HttpError)
-                            showShaderInstallError(
-                                reason,
-                                info.outputData.getLong(RetroArchShaderInstallWorker.KEY_REQUIRED_BYTES, 0),
-                            )
+                            showShaderInstallError(state.error.reason, state.error.requiredBytes)
                             refreshShaderPreferenceVisibility()
                         }
-                        WorkInfo.State.CANCELLED -> {
+                        ShaderInstallViewModel.State.Cancelled -> {
+                            shaderInstall.acknowledge()
                             pendingDsLitePreset = null
                             dismissShaderInstallProgressDialog()
                             refreshShaderPreferenceVisibility()
                         }
                     }
                 }
+            }
         }
     }
 
-    private fun applyShaderInstallProgress(info: WorkInfo) {
+    private fun applyShaderInstallProgress(progress: RetroArchShaderLibraryManager.InstallProgress?) {
         val progressBar = shaderInstallProgressBar ?: return
-        when (info.progress.getString(RetroArchShaderInstallWorker.KEY_PHASE)) {
-            RetroArchShaderInstallWorker.PHASE_DOWNLOADING -> {
-                val total = info.progress.getLong(RetroArchShaderInstallWorker.KEY_TOTAL_BYTES, 0)
-                val downloaded = info.progress.getLong(RetroArchShaderInstallWorker.KEY_DOWNLOADED_BYTES, 0)
+        when (progress) {
+            null -> {
+                progressBar.isIndeterminate = true
+                shaderInstallPhaseText?.setText(R.string.starting)
+            }
+            is RetroArchShaderLibraryManager.InstallProgress.Downloading -> {
+                val total = progress.update.totalSize
+                val downloaded = progress.update.downloadedBytes
                 shaderInstallPhaseText?.setText(R.string.video_retroarch_shader_downloading)
                 if (total > 0) {
                     progressBar.isIndeterminate = false
@@ -1430,9 +1409,9 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                     progressBar.isIndeterminate = true
                 }
             }
-            RetroArchShaderInstallWorker.PHASE_EXTRACTING -> {
-                val total = info.progress.getInt(RetroArchShaderInstallWorker.KEY_ENTRIES_TOTAL, 0)
-                val done = info.progress.getInt(RetroArchShaderInstallWorker.KEY_ENTRIES_DONE, 0)
+            is RetroArchShaderLibraryManager.InstallProgress.Extracting -> {
+                val total = progress.entriesTotal
+                val done = progress.entriesDone
                 shaderInstallPhaseText?.setText(R.string.video_retroarch_shader_extracting)
                 if (total > 0) {
                     progressBar.isIndeterminate = false
@@ -1442,7 +1421,7 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
                     progressBar.isIndeterminate = true
                 }
             }
-            RetroArchShaderInstallWorker.PHASE_FINALIZING -> {
+            RetroArchShaderLibraryManager.InstallProgress.Finalizing -> {
                 shaderInstallPhaseText?.setText(R.string.video_retroarch_shader_finalizing)
                 progressBar.isIndeterminate = true
                 shaderInstallDetailText?.text = ""
@@ -1478,9 +1457,8 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
             .setTitle(R.string.video_retroarch_shader_install_notification_title)
             .setView(container)
             .setCancelable(false)
-            .setPositiveButton(R.string.move_to_background) { dialog, _ -> dialog.dismiss() }
             .setNegativeButton(android.R.string.cancel) { dialog, _ ->
-                WorkManager.getInstance(context).cancelUniqueWork(RetroArchShaderInstallWorker.WORK_NAME)
+                shaderInstall.cancel()
                 dialog.dismiss()
             }
             .create()
@@ -1599,6 +1577,12 @@ class VideoPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTit
     private fun updateDsiCameraImagePreference(preference: StoragePickerPreference, dsiCameraSourceValue: String) {
         val newSource = enumValueOfIgnoreCase<DSiCameraSourceType>(dsiCameraSourceValue)
         preference.isVisible = newSource == DSiCameraSourceType.STATIC_IMAGE
+    }
+
+    override fun onStop() {
+        if (activity?.isChangingConfigurations != true) shaderInstall.cancel()
+        dismissShaderInstallProgressDialog()
+        super.onStop()
     }
 
     override fun onResume() {

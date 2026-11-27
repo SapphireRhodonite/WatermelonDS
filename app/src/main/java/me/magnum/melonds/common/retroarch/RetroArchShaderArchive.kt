@@ -10,7 +10,7 @@ object RetroArchShaderArchive {
     class InvalidArchiveException(cause: Throwable? = null) : Exception(cause)
 
     suspend fun extract(zipFile: File, destination: File, onEntry: (done: Int, total: Int) -> Unit) {
-        destination.deleteRecursively()
+        check(!destination.exists() || destination.deleteRecursively())
         destination.mkdirs()
         val destinationCanonical = destination.canonicalFile
 
@@ -20,6 +20,7 @@ object RetroArchShaderArchive {
             throw InvalidArchiveException(e)
         }
 
+        val buffer = ByteArray(64 * 1024)
         zip.use {
             val total = it.size()
             var done = 0
@@ -39,7 +40,12 @@ object RetroArchShaderArchive {
                     outputFile.parentFile?.mkdirs()
                     it.getInputStream(entry).use { input ->
                         outputFile.outputStream().use { output ->
-                            input.copyTo(output)
+                            while (true) {
+                                currentCoroutineContext().ensureActive()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                output.write(buffer, 0, count)
+                            }
                         }
                     }
                 }

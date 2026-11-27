@@ -114,6 +114,9 @@ class NoCacheRetroAchievementsDao(private val actualAchievementsDao: RetroAchiev
         actualAchievementsDao.addPendingAchievementSubmission(pendingAchievementSubmission)
     }
 
+    override suspend fun hasPendingAchievementSubmissions(): Boolean =
+        actualAchievementsDao.hasPendingAchievementSubmissions()
+
     override suspend fun getPendingAchievementSubmissions(): List<RAPendingAchievementSubmissionEntity> {
         return actualAchievementsDao.getPendingAchievementSubmissions()
     }

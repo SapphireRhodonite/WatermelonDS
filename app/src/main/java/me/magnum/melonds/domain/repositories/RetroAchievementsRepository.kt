@@ -59,6 +59,7 @@ interface RetroAchievementsRepository {
         forHardcoreMode: Boolean,
         expectedAuthentication: RAUserAuth.Authenticated,
     ): Result<RAAwardAchievementResponse>
+    suspend fun resumePendingSubmissions()
     suspend fun submitPendingAchievements(): Result<Unit>
     suspend fun getLeaderboard(leaderboardId: Long): RALeaderboard?
     suspend fun getLeaderboardRanking(leaderboardId: Long, firstEntry: Int = 1, count: Int = 25): Result<RALeaderboardRanking>

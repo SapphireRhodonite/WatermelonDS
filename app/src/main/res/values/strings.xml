@@ -1220,4 +1220,7 @@
         <item>Medium</item>
         <item>Large</item>
     </string-array>
+    <string name="ra_loss_alerts">Enable loss alerts</string>
+    <string name="ra_loss_alerts_summary">Notify me if pending hardcore results are lost when the app closes unexpectedly.</string>
+    <string name="ra_loss_alerts_blocked">Notifications are blocked. You can enable them in Android settings and then turn on loss alerts here.</string>
 </resources>

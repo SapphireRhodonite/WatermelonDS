@@ -707,4 +707,7 @@
         <item>Mediana</item>
         <item>Grande</item>
     </string-array>
+    <string name="ra_loss_alerts">Activar avisos de pérdida</string>
+    <string name="ra_loss_alerts_summary">Avísame si se pierden resultados hardcore pendientes cuando la aplicación se cierra inesperadamente.</string>
+    <string name="ra_loss_alerts_blocked">Las notificaciones están bloqueadas. Puedes permitirlas en los ajustes de Android y después activar aquí los avisos de pérdida.</string>
 </resources>

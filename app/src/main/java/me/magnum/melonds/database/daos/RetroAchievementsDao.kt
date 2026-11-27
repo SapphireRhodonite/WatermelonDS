@@ -102,6 +102,9 @@ abstract class RetroAchievementsDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun addPendingAchievementSubmission(pendingAchievementSubmission: RAPendingAchievementSubmissionEntity)
 
+    @Query("SELECT EXISTS(SELECT 1 FROM ra_pending_achievement_award)")
+    abstract suspend fun hasPendingAchievementSubmissions(): Boolean
+
     @Query("SELECT * FROM ra_pending_achievement_award")
     abstract suspend fun getPendingAchievementSubmissions(): List<RAPendingAchievementSubmissionEntity>
 

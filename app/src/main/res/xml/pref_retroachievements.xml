@@ -19,6 +19,13 @@
         android:defaultValue="true" />
 
     <SwitchPreference
+        android:key="ra_loss_alerts"
+        android:title="@string/ra_loss_alerts"
+        android:summary="@string/ra_loss_alerts_summary"
+        android:persistent="false"
+        app:iconSpaceReserved="false" />
+
+    <SwitchPreference
         android:key="ra_hardcore_enabled"
         android:title="@string/hardcore_mode"
         android:summary="@string/hardcore_mode_summary"

@@ -10,7 +10,7 @@ import androidx.work.Constraints
 import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.OutOfQuotaPolicy
+import androidx.work.await
 import androidx.work.WorkManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.map
@@ -74,7 +74,6 @@ class AndroidRetroAchievementsRepository(
 
     private companion object {
         const val RA_HASH_LIBRARY_LAST_UPDATED = "ra_hash_library_last_updated"
-        const val PENDING_ACHIEVEMENT_SUBMISSION_WORKER_NAME = "ra_pending_achievement_submission_worker"
         const val RA_UNOFFICIAL_ENABLED = "ra_unofficial_enabled"
         const val RA_TRACE_TAG = "RATrace"
         const val RA_SUBMISSION_TAG = "RASubmission"
@@ -833,7 +832,14 @@ class AndroidRetroAchievementsRepository(
         return (Clock.System.now() - lastUserDataUpdateTimestamp) >= 1.days
     }
 
-    private fun scheduleAchievementSubmissionJob() {
+    override suspend fun resumePendingSubmissions() {
+        if (builtInRetryEnabled() && retroAchievementsDao.hasPendingAchievementSubmissions()) {
+            WorkManager.getInstance(context).cancelUniqueWork("ra_pending_achievement_submission_worker").await()
+            scheduleAchievementSubmissionJob(ExistingWorkPolicy.KEEP)
+        }
+    }
+
+    private fun scheduleAchievementSubmissionJob(policy: ExistingWorkPolicy = ExistingWorkPolicy.APPEND_OR_REPLACE) {
         if (!builtInRetryEnabled()) return
         val workConstraints = Constraints.Builder()
             .setRequiredNetworkType(NetworkType.CONNECTED)
@@ -842,10 +848,10 @@ class AndroidRetroAchievementsRepository(
         val workRequest = OneTimeWorkRequestBuilder<RetroAchievementsSubmissionWorker>()
             .setConstraints(workConstraints)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 60, TimeUnit.SECONDS)
-            .setExpedited(OutOfQuotaPolicy.RUN_AS_NON_EXPEDITED_WORK_REQUEST)
+            .addTag(RetroAchievementsSubmissionWorker.NORMAL_QUEUE_TAG)
             .build()
 
-        WorkManager.getInstance(context).enqueueUniqueWork(PENDING_ACHIEVEMENT_SUBMISSION_WORKER_NAME, ExistingWorkPolicy.APPEND_OR_REPLACE, workRequest)
+        WorkManager.getInstance(context).enqueueUniqueWork(RetroAchievementsSubmissionWorker.NORMAL_QUEUE_TAG, policy, workRequest)
     }
 
     private fun builtInRetryEnabled(): Boolean {

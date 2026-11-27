@@ -82,8 +82,8 @@ object MelonModule {
 
     @Provides
     @Singleton
-    fun provideCheatsRepository(@ApplicationContext context: Context, database: MelonDatabase, settingsBackupManager: SettingsBackupManager): CheatsRepository {
-        return RoomCheatsRepository(context, database, settingsBackupManager)
+    fun provideCheatsRepository(database: MelonDatabase, settingsBackupManager: SettingsBackupManager): CheatsRepository {
+        return RoomCheatsRepository(database, settingsBackupManager)
     }
 
     @Provides

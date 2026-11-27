@@ -1,24 +1,15 @@
 package me.magnum.melonds.impl
 
-import android.content.Context
-import android.net.Uri
 import androidx.room.withTransaction
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkInfo
-import androidx.work.WorkManager
-import androidx.work.workDataOf
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.mapNotNull
 import me.magnum.melonds.common.cheats.CheatDatabaseParserListener
 import me.magnum.melonds.common.cheats.CheatDatabaseParser
 import me.magnum.melonds.common.cheats.ProgressTrackerInputStream
-import me.magnum.melonds.common.workers.CheatImportWorker
 import me.magnum.melonds.database.MelonDatabase
 import me.magnum.melonds.database.entities.CheatDatabaseEntity
 import me.magnum.melonds.database.entities.CheatEntity
@@ -28,21 +19,15 @@ import me.magnum.melonds.database.entities.GameEntity
 import me.magnum.melonds.domain.model.Cheat
 import me.magnum.melonds.domain.model.CheatDatabase
 import me.magnum.melonds.domain.model.CheatFolder
-import me.magnum.melonds.domain.model.CheatImportProgress
 import me.magnum.melonds.domain.model.Game
 import me.magnum.melonds.domain.model.RomInfo
 import me.magnum.melonds.domain.repositories.CheatsRepository
 import me.magnum.melonds.ui.cheats.model.CheatSubmissionForm
 
 class RoomCheatsRepository(
-    private val context: Context,
     private val database: MelonDatabase,
     private val settingsBackupManager: SettingsBackupManager,
 ) : CheatsRepository {
-    companion object {
-        private const val IMPORT_WORKER_NAME = "cheat_import_worker"
-    }
-
     override suspend fun getGames(): List<Game> {
         return database.gameDao().getGames().map { game ->
             Game(
@@ -284,46 +269,5 @@ class RoomCheatsRepository(
         val cheatId = cheat.id ?: return
         database.cheatDao().deleteCheat(cheatId)
         settingsBackupManager.requestMirrorWrite()
-    }
-
-    override fun importCheats(uri: Uri) {
-        val workRequest = OneTimeWorkRequestBuilder<CheatImportWorker>()
-                .setInputData(workDataOf(CheatImportWorker.KEY_URI to uri.toString()))
-                .build()
-
-        WorkManager.getInstance(context).enqueueUniqueWork(IMPORT_WORKER_NAME, ExistingWorkPolicy.KEEP, workRequest)
-    }
-
-    override fun isCheatImportOngoing(): Boolean {
-        val workManager = WorkManager.getInstance(context)
-        val statuses = workManager.getWorkInfosForUniqueWork(IMPORT_WORKER_NAME)
-        val infos = statuses.get()
-
-        return infos.any { !it.state.isFinished }
-    }
-
-    override fun getCheatImportProgress(): Flow<CheatImportProgress> {
-        val workManager = WorkManager.getInstance(context)
-        return workManager.getWorkInfosForUniqueWorkFlow(IMPORT_WORKER_NAME)
-            .mapNotNull { workInfos ->
-                val allWorkFinished = workInfos.all { it.state.isFinished }
-                if (allWorkFinished) {
-                    CheatImportProgress(CheatImportProgress.CheatImportStatus.NOT_IMPORTING, 0f, null)
-                } else {
-                    val workInfo = workInfos.first()
-                    when (workInfo.state) {
-                        WorkInfo.State.ENQUEUED -> CheatImportProgress(CheatImportProgress.CheatImportStatus.STARTING, 0f, null)
-                        WorkInfo.State.RUNNING -> {
-                            val relativeProgress = workInfo.progress.getFloat(CheatImportWorker.KEY_PROGRESS_RELATIVE, 0f)
-                            val itemName = workInfo.progress.getString(CheatImportWorker.KEY_PROGRESS_ITEM)
-                            CheatImportProgress(CheatImportProgress.CheatImportStatus.ONGOING, relativeProgress, itemName)
-                        }
-                        WorkInfo.State.SUCCEEDED -> CheatImportProgress(CheatImportProgress.CheatImportStatus.FINISHED, 1f, null)
-                        WorkInfo.State.CANCELLED,
-                        WorkInfo.State.FAILED -> CheatImportProgress(CheatImportProgress.CheatImportStatus.FAILED, 0f, null)
-                        WorkInfo.State.BLOCKED -> null
-                    }
-                }
-            }
     }
 }

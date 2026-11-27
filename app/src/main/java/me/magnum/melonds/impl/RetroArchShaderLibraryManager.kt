@@ -5,6 +5,9 @@ import android.content.SharedPreferences
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.currentCoroutineContext
+import android.system.Os
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.ensureActive
 import me.magnum.melonds.common.retroarch.RetroArchShaderArchive
 import me.magnum.melonds.domain.model.DownloadProgress
@@ -13,7 +16,6 @@ import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -62,6 +64,7 @@ class RetroArchShaderLibraryManager @Inject constructor(
         val installedBytes: Long,
         val fileCount: Int,
         val rootSubdirectory: String?,
+        val alternateSlot: Boolean,
     )
 
     sealed interface InstallProgress {
@@ -72,16 +75,20 @@ class RetroArchShaderLibraryManager @Inject constructor(
 
     private val shaderRoot = File(context.filesDir, "retroarch-shaders")
     private val installedRoot = File(shaderRoot, "installed")
+    private val alternateRoot = File(shaderRoot, "installed-next")
+    private val installation = Mutex()
     private val manifestFile = File(shaderRoot, "installed.json")
     private val downloadFile = File(File(context.cacheDir, "retroarch-shaders"), "shaders_slang.zip.part")
 
     val libraryRoot: File?
         get() {
-            if (!installedRoot.isDirectory) {
+            val manifest = readManifest()
+            val activeRoot = if (manifest?.alternateSlot == true) alternateRoot else installedRoot
+            if (!activeRoot.isDirectory) {
                 return null
             }
-            val subdirectory = readManifest()?.rootSubdirectory
-            val root = if (subdirectory.isNullOrBlank()) installedRoot else File(installedRoot, subdirectory)
+            val subdirectory = manifest?.rootSubdirectory
+            val root = if (subdirectory.isNullOrBlank()) activeRoot else File(activeRoot, subdirectory)
             return root.takeIf { it.isDirectory }
         }
 
@@ -106,6 +113,7 @@ class RetroArchShaderLibraryManager @Inject constructor(
                 installedBytes = json.optLong("installedBytes"),
                 fileCount = json.optInt("fileCount"),
                 rootSubdirectory = optNullableString("rootSubdirectory"),
+                alternateSlot = json.optBoolean("alternateSlot", false),
             )
         }.getOrNull()
     }
@@ -138,35 +146,30 @@ class RetroArchShaderLibraryManager @Inject constructor(
         return remote.contentLength > 0 && remote.contentLength != manifest.remoteContentLength
     }
 
-    suspend fun install(onProgress: (InstallProgress) -> Unit) {
+    suspend fun install(onProgress: (InstallProgress) -> Unit) = installation.withLock {
         val remote = fetchRemoteInfo()
+        currentCoroutineContext().ensureActive()
         ensureEnoughFreeSpace(remote.contentLength)
-
-        val pendingRoot = File(shaderRoot, "pending-${UUID.randomUUID()}")
+        val useAlternate = readManifest()?.alternateSlot != true
+        val destination = if (useAlternate) alternateRoot else installedRoot
+        var published = false
         try {
             download(remote, onProgress)
-            extract(pendingRoot, onProgress)
-
+            extract(destination, onProgress)
+            currentCoroutineContext().ensureActive()
             onProgress(InstallProgress.Finalizing)
-            val rootSubdirectory = RetroArchShaderArchive.detectRootSubdirectory(pendingRoot)
-
-            installedRoot.deleteRecursively()
-            installedRoot.parentFile?.mkdirs()
-            if (!pendingRoot.renameTo(installedRoot)) {
-                throw ShaderInstallException(ShaderInstallException.Reason.CorruptArchive)
-            }
-
-            writeManifest(remote, rootSubdirectory)
+            val subdirectory = RetroArchShaderArchive.detectRootSubdirectory(destination)
+            writeManifest(remote, subdirectory, destination, useAlternate)
+            published = true
             bumpLibraryVersion()
-        } catch (e: Throwable) {
-            pendingRoot.deleteRecursively()
-            throw e
         } finally {
+            if (!published) destination.deleteRecursively()
             downloadFile.delete()
         }
     }
 
-    fun uninstall() {
+    suspend fun uninstall() = installation.withLock {
+        alternateRoot.deleteRecursively()
         installedRoot.deleteRecursively()
         manifestFile.delete()
         File(shaderRoot, "current").deleteRecursively()
@@ -178,11 +181,9 @@ class RetroArchShaderLibraryManager @Inject constructor(
     }
 
     fun installedSizeBytes(): Long {
-        if (!installedRoot.isDirectory) {
-            return 0
-        }
+        val root = libraryRoot ?: return 0
         return readManifest()?.installedBytes?.takeIf { it > 0 }
-            ?: installedRoot.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+            ?: root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
     }
 
     private fun ensureEnoughFreeSpace(contentLength: Long) {
@@ -224,6 +225,7 @@ class RetroArchShaderLibraryManager @Inject constructor(
                         if (read < 0) {
                             break
                         }
+                        currentCoroutineContext().ensureActive()
                         output.write(buffer, 0, read)
                         downloaded += read
                         onProgress(InstallProgress.Downloading(DownloadProgress.DownloadUpdate(totalSize, downloaded)))
@@ -254,15 +256,18 @@ class RetroArchShaderLibraryManager @Inject constructor(
         }
     }
 
-    private fun writeManifest(remote: RemoteShaderPackage, rootSubdirectory: String?) {
+    private suspend fun writeManifest(remote: RemoteShaderPackage, rootSubdirectory: String?, directory: File, alternate: Boolean) {
         var installedBytes = 0L
         var fileCount = 0
-        installedRoot.walkTopDown().forEach {
+        directory.walkTopDown().forEach {
+            currentCoroutineContext().ensureActive()
             if (it.isFile) {
                 installedBytes += it.length()
                 fileCount++
             }
         }
+
+        if (fileCount == 0) throw ShaderInstallException(ShaderInstallException.Reason.CorruptArchive)
 
         val json = JSONObject().apply {
             put("sourceUrl", SHADER_PACKAGE_URL)
@@ -270,11 +275,18 @@ class RetroArchShaderLibraryManager @Inject constructor(
             put("installedAtMillis", System.currentTimeMillis())
             put("installedBytes", installedBytes)
             put("fileCount", fileCount)
+            put("alternateSlot", alternate)
             remote.lastModified?.let { put("remoteLastModified", it) }
             rootSubdirectory?.let { put("rootSubdirectory", it) }
         }
         manifestFile.parentFile?.mkdirs()
-        manifestFile.writeText(json.toString())
+        val nextManifest = File(shaderRoot, "installed.json.tmp")
+        FileOutputStream(nextManifest).use {
+            it.write(json.toString().toByteArray(Charsets.UTF_8))
+            it.fd.sync()
+        }
+        currentCoroutineContext().ensureActive()
+        Os.rename(nextManifest.path, manifestFile.path)
     }
 
     private fun bumpLibraryVersion() {

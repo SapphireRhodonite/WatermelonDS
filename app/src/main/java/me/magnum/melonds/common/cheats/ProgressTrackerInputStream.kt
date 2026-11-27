@@ -3,19 +3,24 @@ package me.magnum.melonds.common.cheats
 import java.io.FilterInputStream
 import java.io.InputStream
 
-class ProgressTrackerInputStream(inputStream: InputStream?) : FilterInputStream(inputStream) {
+class ProgressTrackerInputStream(inputStream: InputStream?, private val checkActive: () -> Unit = {}) : FilterInputStream(inputStream) {
     var totalReadBytes = 0L
         private set
 
     override fun read(): Int {
+        checkActive()
         val value = super.read()
         if (value >= 0) totalReadBytes++
         return value
     }
 
-    override fun skip(n: Long): Long = super.skip(n).also { totalReadBytes += it }
+    override fun skip(n: Long): Long {
+        checkActive()
+        return super.skip(n).also { totalReadBytes += it }
+    }
 
     override fun read(b: ByteArray?, off: Int, len: Int): Int {
+        checkActive()
         val readBytes = super.read(b, off, len)
         if (readBytes > 0) totalReadBytes += readBytes
 

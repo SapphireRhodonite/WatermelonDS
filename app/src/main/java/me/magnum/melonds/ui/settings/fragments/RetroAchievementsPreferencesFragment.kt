@@ -1,5 +1,11 @@
 package me.magnum.melonds.ui.settings.fragments
 
+import android.Manifest
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.app.NotificationManagerCompat
+import me.magnum.melonds.MelonDSApplication
+import me.magnum.melonds.extensions.isNotificationPermissionGranted
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -42,8 +48,50 @@ class RetroAchievementsPreferencesFragment : BasePreferenceFragment(), Preferenc
 
     private var loginProgressDialog: LoadingDialog? = null
 
+    private lateinit var lossAlerts: SwitchPreference
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        setLossAlerts(granted)
+        if (!granted && Build.VERSION.SDK_INT >= 33 && !shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+            AlertDialog.Builder(requireContext())
+                .setMessage(R.string.ra_loss_alerts_blocked)
+                .setNegativeButton(android.R.string.cancel, null)
+                .setPositiveButton(R.string.settings) { _, _ ->
+                    startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                        .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, requireContext().packageName))
+                }.show()
+        }
+    }
+
+    private fun setLossAlerts(enabled: Boolean) {
+        preferenceManager.sharedPreferences?.edit()?.putBoolean(MelonDSApplication.LOSS_ALERTS_KEY, enabled)?.apply()
+        refreshLossAlerts()
+        if (enabled) {
+            (requireActivity().application as MelonDSApplication).recoverUnexpectedHardcoreOfflineLossIfNeeded()
+        }
+    }
+
+    private fun refreshLossAlerts() {
+        lossAlerts.isChecked = preferenceManager.sharedPreferences?.getBoolean(MelonDSApplication.LOSS_ALERTS_KEY, false) == true &&
+            NotificationManagerCompat.from(requireContext()).areNotificationsEnabled()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshLossAlerts()
+    }
+
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         setPreferencesFromResource(R.xml.pref_retroachievements, rootKey)
+
+        lossAlerts = findPreference<SwitchPreference>(MelonDSApplication.LOSS_ALERTS_KEY)!!
+        lossAlerts.setOnPreferenceChangeListener { _, value ->
+            if (value == true && Build.VERSION.SDK_INT >= 33 && !requireContext().isNotificationPermissionGranted()) {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+            } else {
+                setLossAlerts(value == true)
+            }
+            false
+        }
 
         val accountPreference = findPreference<Preference>("ra_login")!!
         val profilePreference = findPreference<RetroAchievementsProfilePreference>("ra_profile")!!

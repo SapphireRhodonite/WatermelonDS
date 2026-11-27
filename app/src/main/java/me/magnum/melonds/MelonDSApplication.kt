@@ -2,6 +2,7 @@ package me.magnum.melonds
 
 import android.Manifest
 import android.app.Application
+import android.content.SharedPreferences
 import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
@@ -12,6 +13,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.work.Configuration
+import dagger.Lazy
+import kotlinx.coroutines.CoroutineScope
+import me.magnum.melonds.domain.repositories.RetroAchievementsRepository
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -32,10 +36,13 @@ import javax.inject.Inject
 @HiltAndroidApp
 class MelonDSApplication : Application(), Configuration.Provider {
     companion object {
+        const val LOSS_ALERTS_KEY = "ra_loss_alerts"
         const val NOTIFICATION_CHANNEL_ID_BACKGROUND_TASKS = "channel_cheat_importing"
         private const val NOTIFICATION_ID_HARDCORE_OFFLINE_LOSS = 2002
     }
 
+    @Inject lateinit var retroAchievementsRepository: Lazy<RetroAchievementsRepository>
+    @Inject lateinit var preferences: SharedPreferences
     @Inject lateinit var workerFactory: HiltWorkerFactory
     @Inject lateinit var settingsRepository: SettingsRepository
     @Inject lateinit var migrator: Migrator
@@ -68,6 +75,19 @@ class MelonDSApplication : Application(), Configuration.Provider {
         performMigrations()
         settingsBackupManager.initializeMirror()
         appLogFileRecorder.start()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                retroAchievementsRepository.get().resumePendingSubmissions()
+            } catch (e: Exception) {
+                Log.w("RASubmission", "Could not schedule pending submissions", e)
+            }
+        }
+        if (!preferences.contains(LOSS_ALERTS_KEY)) {
+            val info = packageManager.getPackageInfo(packageName, 0)
+            val previouslyAllowed = info.lastUpdateTime > info.firstInstallTime &&
+                NotificationManagerCompat.from(this).areNotificationsEnabled()
+            preferences.edit().putBoolean(LOSS_ALERTS_KEY, previouslyAllowed).apply()
+        }
         recoverUnexpectedHardcoreOfflineLossIfNeeded()
         MelonDSAndroidInterface.setup(
             UriFileHandler(this, uriHandler),
@@ -106,7 +126,10 @@ class MelonDSApplication : Application(), Configuration.Provider {
         migrator.performMigrations()
     }
 
-    private fun recoverUnexpectedHardcoreOfflineLossIfNeeded() {
+    fun recoverUnexpectedHardcoreOfflineLossIfNeeded() {
+        if (!preferences.getBoolean(LOSS_ALERTS_KEY, false) ||
+            !NotificationManagerCompat.from(this).areNotificationsEnabled()
+        ) return
         if (
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(
@@ -116,6 +139,10 @@ class MelonDSApplication : Application(), Configuration.Provider {
         ) {
             return
         }
+        val manager = NotificationManagerCompat.from(this)
+        if (Build.VERSION.SDK_INT >= 26 &&
+            manager.getNotificationChannel(NOTIFICATION_CHANNEL_ID_BACKGROUND_TASKS)?.importance == NotificationManagerCompat.IMPORTANCE_NONE
+        ) return
         val pendingLoss = hardcoreOfflineLossTracker.consumePendingUnlocks() ?: return
         if (pendingLoss.totalCount <= 0) return
 

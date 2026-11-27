@@ -35,6 +35,11 @@ class CheatsPreferencesFragment : BasePreferenceFragment(), PreferenceFragmentTi
         }
     }
 
+    override fun onStop() {
+        if (activity?.isChangingConfigurations != true) viewModel.cancel()
+        super.onStop()
+    }
+
     private fun handleCheatsImport() {
         if (viewModel.areCheatsBeingImported()) {
             CheatsImportProgressDialog().show(childFragmentManager, null)
